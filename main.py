@@ -12,7 +12,7 @@ console.print("[bold][purple]│[purple]  |___/\\__,_|_.__/ \\__,_|[white]\\__|_
 console.print("[bold][purple]│                                                    [white]│")
 console.print("[bold][purple]└──────────────────────────[white]──────────────────────────┘\n")
 
-console.print("[purple][bold]st[/bold] [white]initializing libraries")
+console.print("[purple][bold]st[/bold] [white]► initializing libraries")
 
 import os
 import matplotlib.pyplot as plt
@@ -30,22 +30,17 @@ from sklearn.model_selection import train_test_split
 
 import tensorflow as tf
 
-#print("[st] Fetching Historical Data: Contacting Server")
-
 def connect_to_exchange():
-    #console.print("[purple][bold]st[/bold] [white]connecting to server")
+    console.print("[purple][bold]st[/bold] [white]► connecting to server")
     return ccxt.binance()
-
-console.print("[purple][bold]st[/bold] [white]connecting to server")
-exchange = connect_to_exchange()
 
 def fetch_data(symbol, timeframe, exchange, n):
     limit = 1000
-    since = exchange.fetch_ohlcv(symbol, timeframe, limit=1)[0][0] - (15 * 60 * 1000 * limit * (n + 55))
+    since = exchange.fetch_ohlcv(symbol, timeframe, limit=1)[0][0] - (1 * 60 * 1000 * limit * (n + 60))
 
     ohlcv = []
 
-    console.print("[purple][bold]st[/bold] [white]fetching historical data")
+    console.print("[purple][bold]st[/bold] [white]► fetching historical data")
     # Iterate to fetch historical price data
     with Progress() as progress:
         # Add a progress task
@@ -72,7 +67,7 @@ def fetch_data(symbol, timeframe, exchange, n):
 
 # KNN Algorithm using Tensorflow
 class KNN(tf.keras.Model):
-    def __init__(self, k=9):
+    def __init__(self, k):
         super(KNN, self).__init__()
         self.k = k
 
@@ -123,22 +118,38 @@ class KNN(tf.keras.Model):
         return predictions
 
     def save_model(self, filepath):
-        np.savez(filepath, X_train=self.X_train.numpy(), y_train=self.y_train.numpy())
+        np.savez(filepath, X_train=self.X_train.numpy(), y_train=self.y_train.numpy(), X_test=self.X_test.numpy(), y_test=self.y_test.numpy())
 
     def load_model(self, filepath):
         data = np.load(filepath)
         self.X_train = tf.constant(data['X_train'], dtype=tf.double)
         self.y_train = tf.constant(data['y_train'], dtype=tf.int32)
+        self.X_test = tf.constant(data['X_train'], dtype=tf.double)
+        self.y_test = tf.constant(data['y_train'], dtype=tf.int32)
 
-knn = KNN(k=9)
+# global variables
+prompt = "st"
+choice = 0
+knn = KNN(k=10)
+df = []
 predictions = []
 loaded = False
 
-console.print("[purple][bold]st[/bold] [white]select option:\n  1) new\n  2) load\n  3) back-test\n  4) quit")
-choice = int(console.input("[purple][bold]st[/bold] [white]: "))
+# initial choice
+console.print("[purple][bold]"+ prompt +"[/bold] [white]► select option:\n  1) new    2) load    3) back-test    4) quit")
+try:
+    choice = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
+except:
+    choice = 0
+
+# cli-program
 while choice != 4:
     if choice == 1:
-        ohlcv = fetch_data('ETH/USDT', '15m', exchange, 10)
+        n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
+        exchange = connect_to_exchange()
+        ohlcv = fetch_data('ETH/USDT', '1m', exchange, n)
+
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
 
         # Load data (use your own dataset or fetch it via an API)
         # Example: Load a CSV file with OHLCV data
@@ -153,9 +164,9 @@ while choice != 4:
         df = df.dropna()
 
         # Define the target variable (e.g., price increase or decrease over the next 5 timesteps)
-        future_steps_buy = 8
-        future_steps_sell = 3
-        cutoff_buy = 0.01
+        future_steps_buy = 12
+        future_steps_sell = 8
+        cutoff_buy = 0.005
         cutoff_sell = 0.005
         df['next_buy'] = df[4].shift(-future_steps_buy)
         df['next_sell'] = df[4].shift(-future_steps_sell)
@@ -165,7 +176,6 @@ while choice != 4:
                        0,
             axis=1
         )
-        #df['target'] = ((df[4].shift(+future_steps) > df[4])).astype(int)
 
         # Drop rows without target
         df = df.dropna()
@@ -182,35 +192,47 @@ while choice != 4:
         # Split the dataset
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        console.print("[purple][bold]st[/bold] [white]creating model")
         knn.fit(X_train, y_train, X_test, y_test)
         knn.save_model('models/model.npz')
 
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► making predictions")
         predictions = knn.predict(True)
 
         # Evaluate accuracy
         accuracy = np.mean(np.array(predictions) == y_test)
-        console.print(f"[purple][bold]st[/bold] [white]model accuracy: {accuracy * 100:.2f}%")
-
-        loaded == True
+        console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
+        
+        loaded = True
+        prompt = prompt + " (model.npz)"
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
 
     elif choice == 2:
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► loading model")
         knn.load_model('models/model.npz')
+
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► making predictions")
         predictions = knn.predict(True)
 
         # Evaluate accuracy
-        accuracy = np.mean(np.array(predictions) == y_test)
-        console.print(f"[purple][bold]st[/bold] [white]model accuracy: {accuracy * 100:.2f}%")
+        accuracy = np.mean(np.array(predictions) == knn.y_test)
+        console.print(f"[purple][bold]"+ prompt +"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
 
-        loaded == True
+        loaded = True
+        prompt = prompt + " (model.npz)"
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
 
     elif choice == 3:
         if loaded == True:
+            print("asdfasdf")
             initial_balance = 100  # Starting capital in USD
             balance = initial_balance
             position = 0  # 1 = long, -1 = short, 0 = no position
             entry_price = 0  # Price at which the position is entered
-            trading_fee = 0.001  # 0.075% trading fee per transaction
+            trading_fee = 0 #0.001  # 0.075% trading fee per transaction
+
+            plt.figure(figsize=(14, 7))
+            actual_times = df[0].iloc[len(X_train):len(X_train) + len(y_test)].values
+            actual_prices = df[4].iloc[len(X_train):len(X_train) + len(y_test)].values
 
             # Backtest loop
             for i in range(len(predictions)):
@@ -219,12 +241,12 @@ while choice != 4:
 
                 if signal == 1:  # Buy signal
                     if position == 0:  # Open a long position if no position is open
-                        pause = future_steps_buy
                         position = 1
                         entry_price = current_price
                         balance -= balance * trading_fee  # Deduct trading fee for entering the position
                         #print(f"[RESULT] Buy: Entering at {entry_price:.2f}, Balance: {balance:.2f}")
                         #print(f"[RESULT] Buy")
+                        plt.scatter(actual_times[i], actual_prices[i], color='green', s=100, label='Buy Signal')
 
                 elif signal == -1:  # Sell signal
                     if position == 1:  # Close the long position if it's open
@@ -232,18 +254,31 @@ while choice != 4:
                         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
                         position = 0
                         #print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}")
-                        console.print(f"[purple][bold]st[/bold] [white]trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                        console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
                         #print(f"[st] Trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                        plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
 
                 elif signal == 0:  # Hold signal
-                    if (position == 1 and (current_price - entry_price) / entry_price < -0.0025):
-                        balance += 0.01 * balance  # Calculate profit/loss
+                    if (position == 1 and (current_price - entry_price) / entry_price < -0.025):
+                        balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
                         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
                         position = 0
                         #print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}, -0.01%")
                         #print(f"[RESULT] Sell -1%")
-                        console.print(f"[purple][bold]st[/bold] [white]liquidation -0.25%")
+                        console.print(f"[purple][bold]st[/bold] [white]► liquidation -0.5%")
                         #print(f"[ST] Liquidation -1.00%")
+                        plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
+
+                    if (position == 1 and (current_price - entry_price) / entry_price > 0.05):
+                        balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
+                        balance -= balance * trading_fee  # Deduct trading fee for exiting the position
+                        position = 0
+                        #print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}, -0.01%")
+                        #print(f"[RESULT] Sell -1%")
+                        console.print(f"[purple][bold]st[/bold] [white]► top 5%")
+                        #print(f"[ST] Liquidation -1.00%")
+                        plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
+
                     continue  # Do nothing and move to the next step
 
             #if position == 1:
@@ -255,14 +290,29 @@ while choice != 4:
             #print(f"[RESULT] Initial Balance: ${initial_balance:.2f}")
             #print(f"[RESULT] Final Balance: ${balance:.2f}")
             #print(f"[RESULT] Net Profit: ${balance - initial_balance:.2f} {((balance - initial_balance) / initial_balance) * 100: .2f}%")
-            console.print(f"[purple][bold]st[/bold] [white]net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
+            console.print(f"[purple][bold]st[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             #print(f"[st] Net Profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             #print(f"[RESULT] $100.00 --> ${((1 + ((balance - initial_balance) / initial_balance)) * 100):.2f}")
-        else:
-            continue
 
-    console.print("[purple][bold]st[/bold] [white]select option:\n  1) new\n  2) load\n  3) back-test\n  4) quit")
-    choice = int(console.input("[purple][bold]st[/bold] [white]: "))
+            '''
+            for i, pred in enumerate(predictions):
+                if pred == 1:  # Buy signal
+                    plt.scatter(actual_times[i], actual_prices[i], color='green', label='Buy Signal' if i == 0 else "")
+                elif pred == -1:  # Sell signal
+                    plt.scatter(actual_times[i], actual_prices[i], color='red', label='Sell Signal' if i == 0 else "")
+            '''
+
+            plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))][4], color='black', label='Data Points')
+            plt.show()
+
+    
+    if (1 <= int(choice) <= 4):
+        console.input("[dim]\npress any key to continue... ")
+
+    #console.print("[purple][bold]"+ prompt +"[/bold] [white]select option:\n  1) new\n  2) load\n  3) back-test\n  4) quit")
+    try:
+        choice = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
+    except:
+        choice = 0
 
 quit()
-#**********************************************************************************************#
