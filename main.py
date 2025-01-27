@@ -1,21 +1,19 @@
+# local files
+from models import KNN
+from utils import welcome_text, connect_to_exchange, fetch_data
+
+# libraries
 from rich.progress import Progress
 from rich.console import Console
 
 console = Console()
-
-console.print("[bold][white]┌──────────────────────────[purple]──────────────────────────┐")
-console.print("[bold][white]│[purple]             _           [white]_                 _        [purple]│")
-console.print("[bold][white]│[purple]   ___  __ _| |__   __ _[white]| |_ _ __ __ _  __| | ___   [purple]│")
-console.print("[bold][white]│[purple]  / __|/ _` | '_ \\ / _` [white]| __| '__/ _` |/ _` |/ _ \\  [purple]│")
-console.print("[bold][purple]│[purple]  \\__ \\ (_| | |_) | (_| [white]| |_| | | (_| | (_| |  __/  [white]│")
-console.print("[bold][purple]│[purple]  |___/\\__,_|_.__/ \\__,_|[white]\\__|_|  \\__,_|\\__,_|\\___|  [white]│")
-console.print("[bold][purple]│                                                    [white]│")
-console.print("[bold][purple]└──────────────────────────[white]──────────────────────────┘\n")
-
+welcome_text()
 console.print("[purple][bold]st[/bold] [white]► initializing libraries")
 
 import os
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('Qt5Agg')
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -23,188 +21,223 @@ import ccxt
 import time
 import datetime
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pandas_ta as ta
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
 import tensorflow as tf
-
-def connect_to_exchange():
-    console.print("[purple][bold]st[/bold] [white]► connecting to server")
-    return ccxt.binance()
-
-def fetch_data(symbol, timeframe, exchange, n):
-    limit = 1000
-    since = exchange.fetch_ohlcv(symbol, timeframe, limit=1)[0][0] - (1 * 60 * 1000 * limit * (n + 60))
-
-    ohlcv = []
-
-    console.print("[purple][bold]st[/bold] [white]► fetching historical data")
-    # Iterate to fetch historical price data
-    with Progress() as progress:
-        # Add a progress task
-        task = progress.add_task("  progress:", total=n)
-
-        for i in range(n):
-            ohlcv_chunk = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-            
-            # Append the new data to the all_data list
-            ohlcv += ohlcv_chunk
-            
-            # Update 'since' for the next request (use the timestamp of the last candle)
-            since = ohlcv_chunk[-1][0]  # The timestamp of the last candle
-
-            # Print results
-            #if ((i + 1) % 5 == 0):
-            #    print(f"[INFO] Fetching Historical Data: {(i + 1) * 1000}/{n * 1000}")
-
-            # Sleep to avoid hitting rate limits
-            progress.update(task, advance=1)
-            time.sleep(1)
-
-    return ohlcv
-
-# KNN Algorithm using Tensorflow
-class KNN(tf.keras.Model):
-    def __init__(self, k):
-        super(KNN, self).__init__()
-        self.k = k
-
-    def fit(self, X_train, y_train, X_test, y_test):
-        self.X_train = tf.constant(X_train, dtype=tf.double)
-        self.y_train = tf.constant(y_train, dtype=tf.int32)
-        self.X_test = tf.constant(X_test, dtype=tf.double)
-        self.y_test = tf.constant(y_test, dtype=tf.int32)
-
-    def predict(self, show):
-        predictions = []
-        if show == True:
-            with Progress() as progress:
-                # Add a progress task
-                task = progress.add_task("  progress:", total=len(self.X_test))
-
-                for test_point in self.X_test:
-                    # Compute Euclidean distance from the test point to all training points
-                    distances = tf.norm(self.X_train - test_point, axis=1)
-                    # Find the indices of the k nearest neighbors
-                    k_indices = tf.argsort(distances)[:self.k]
-                    # Get the labels of the k nearest neighbors
-                    k_labels = tf.gather(self.y_train, k_indices)
-                    # Predict the majority class (mode)
-                    unique_labels, _, counts = tf.unique_with_counts(k_labels)
-                    majority_class = unique_labels[tf.argmax(counts)]
-                    predictions.append(int(majority_class))
-                    
-                    #if (len(predictions) % 10 == 0):
-                    #    print(f"[INFO] {len(predictions)}/{len(X_test)}")
-
-                    progress.update(task, advance=1)
-
-        elif show == False:
-            for test_point in self.X_test:
-                # Compute Euclidean distance from the test point to all training points
-                distances = tf.norm(self.X_train - test_point, axis=1)
-                # Find the indices of the k nearest neighbors
-                k_indices = tf.argsort(distances)[:self.k]
-                # Get the labels of the k nearest neighbors
-                k_labels = tf.gather(self.y_train, k_indices)
-                # Predict the majority class (mode)
-                unique_labels, _, counts = tf.unique_with_counts(k_labels)
-                majority_class = unique_labels[tf.argmax(counts)]
-                predictions.append(int(majority_class))
-                if (len(predictions) % 10 == 0):
-                    print(f"[INFO] {len(predictions)}/{len(self.X_test)}")
-        return predictions
-
-    def save_model(self, filepath):
-        np.savez(filepath, X_train=self.X_train.numpy(), y_train=self.y_train.numpy(), X_test=self.X_test.numpy(), y_test=self.y_test.numpy())
-
-    def load_model(self, filepath):
-        data = np.load(filepath)
-        self.X_train = tf.constant(data['X_train'], dtype=tf.double)
-        self.y_train = tf.constant(data['y_train'], dtype=tf.int32)
-        self.X_test = tf.constant(data['X_train'], dtype=tf.double)
-        self.y_test = tf.constant(data['y_train'], dtype=tf.int32)
+from xgboost import XGBClassifier
+from scipy.signal import argrelextrema
+import joblib
 
 # global variables
 prompt = "st"
 choice = 0
-knn = KNN(k=10)
+knn = KNN(k=12)
 df = []
 predictions = []
 loaded = False
+choice_model = 0
+X_train, X_test, y_train, y_test = [], [], [], []
 
 # initial choice
-console.print("[purple][bold]"+ prompt +"[/bold] [white]► select option:\n  1) new    2) load    3) back-test    4) quit")
+'''
+console.print("[purple][bold]"+ prompt +"[/bold] [white]► select option:\n  1) new    2) load    3) back-test    4) options    5) quit")
 try:
     choice = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
 except:
     choice = 0
+'''
 
 # cli-program
-while choice != 4:
+while choice != 5:
+    console.print("[purple][bold]"+ prompt +"[/bold] [white]► options:\n  1) new    2) load    3) back-test    4) options    5) quit")
+    try:
+        choice = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
+    except:
+        choice = 0
+
     if choice == 1:
-        n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-        exchange = connect_to_exchange()
-        ohlcv = fetch_data('ETH/USDT', '1m', exchange, n)
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► models:\n  1) knn    2) gradient boosting    3) random forest    4) quit")
+        try:
+            choice_model = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
+        except:
+            choice_model = 4
 
-        console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
+        if choice_model == 1:
+                n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
+                exchange = connect_to_exchange()
+                ohlcv = fetch_data('ETH/USDT', '1m', exchange, n)
 
-        # Load data (use your own dataset or fetch it via an API)
-        # Example: Load a CSV file with OHLCV data
-        df = pd.DataFrame(ohlcv)
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
 
-        # Feature engineering: Create additional features (e.g., moving averages, RSI)
-        df['SMA_20'] = df[4].rolling(window=20).mean()
-        df['SMA_50'] = df[4].rolling(window=50).mean()
-        df['RSI'] = 100 - (100 / (1 + df[4].pct_change().rolling(window=14).apply(lambda x: (x[x > 0].sum() / -x[x < 0].sum()) if x[x < 0].sum() != 0 else 0)))
+                # Load data (use your own dataset or fetch it via an API)
+                # Example: Load a CSV file with OHLCV data
+                df = pd.DataFrame(ohlcv)
 
-        # Drop NaN values after feature calculation
-        df = df.dropna()
+                # Feature engineering: Create additional features (e.g., moving averages, RSI)
+                df['SMA_20'] = df[4].rolling(window=20).mean()
+                df['SMA_50'] = df[4].rolling(window=50).mean()
+                #df['RSI'] = 100 - (100 / (1 + df[4].pct_change().rolling(window=14).apply(lambda x: (x[x > 0].sum() / -x[x < 0].sum()) if x[x < 0].sum() != 0 else 0)))
 
-        # Define the target variable (e.g., price increase or decrease over the next 5 timesteps)
-        future_steps_buy = 12
-        future_steps_sell = 8
-        cutoff_buy = 0.005
-        cutoff_sell = 0.005
-        df['next_buy'] = df[4].shift(-future_steps_buy)
-        df['next_sell'] = df[4].shift(-future_steps_sell)
-        df['target'] = df.apply(
-            lambda row: 1 if (row['next_buy'] - row[4]) / row[4] > cutoff_buy else
-                       -1 if (row['next_sell'] - row[4]) / row[4] < -cutoff_sell else
-                       0,
-            axis=1
-        )
+                df['RSI'] = ta.rsi(df[4], length=14)
+                df['CMO'] = ta.cmo(df[4], length=14)
+                df['ROC'] = ta.roc(df[4], length=14)
+                df["CCI"] = ta.cci(df[2], df[3], df[4], length=14)
+                df['ATR'] = ta.atr(df[2], df[3], df[4])
+                supertrend = ta.supertrend(df[2], df[3], df[4], length=10, multiplier=3)
+                df['SuperTrend'] = supertrend[f'SUPERT_10_3.0']  # SuperTrend column name format is SUPERT_length_multiplier
+                df['SuperTrend_Direction'] = supertrend[f'SUPERTd_10_3.0']  # Trend direction: 1 (bullish), -1 (bearish)
 
-        # Drop rows without target
-        df = df.dropna()
+                bollinger = ta.bbands(df[4], length=20, std=2)  # Default length is 20, std is 2
+                df['BB_Middle'] = bollinger['BBM_20_2.0']  # Bollinger Middle Band
+                df['BB_Upper'] = bollinger['BBU_20_2.0']   # Bollinger Upper Band
+                df['BB_Lower'] = bollinger['BBL_20_2.0']   # Bollinger Lower Band
 
-        # Select features for the model
-        features = [4, 5, 'SMA_20', 'SMA_50', 'RSI']
-        X = df[features].values
-        y = df['target'].values
+                # Drop NaN values after feature calculation
+                df = df.dropna()
 
-        # Normalize features
-        scaler = MinMaxScaler()
-        X = scaler.fit_transform(X)
+                # Define the target variable (e.g., price increase or decrease over the next 5 timesteps)
+                future_steps_buy = 18
+                future_steps_sell = 8
+                cutoff_buy = 0
+                cutoff_sell = 0
+                df['next_buy'] = df[4].shift(-future_steps_buy)
+                df['next_sell'] = df[4].shift(-future_steps_sell)
+                df['target'] = df.apply(
+                    lambda row: 1 if (row['next_buy'] - row[4]) / row[4] > cutoff_buy else
+                                0 if (row['next_sell'] - row[4]) / row[4] < -cutoff_sell else
+                                2,
+                    axis=1
+                )
 
-        # Split the dataset
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+                # Drop rows without target
+                df = df.dropna()
 
-        knn.fit(X_train, y_train, X_test, y_test)
-        knn.save_model('models/model.npz')
+                # Select features for the model
+                features = [5, 'RSI', 'ROC', 'ATR', 'BB_Upper', 'BB_Lower']
+                X = df[features].values
+                y = df['target'].values
 
-        console.print("[purple][bold]"+ prompt +"[/bold] [white]► making predictions")
-        predictions = knn.predict(True)
+                # Normalize features
+                scaler = MinMaxScaler()
+                X = scaler.fit_transform(X)
 
-        # Evaluate accuracy
-        accuracy = np.mean(np.array(predictions) == y_test)
-        console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
-        
-        loaded = True
-        prompt = prompt + " (model.npz)"
-        console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
+                # Split the dataset
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+                knn.fit(X_train, y_train, X_test, y_test)
+                knn.save_model('models/model.npz')
+
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► making predictions")
+                predictions = knn.predict(True)
+
+                # Evaluate accuracy
+                accuracy = np.mean(np.array(predictions) == y_test)
+                console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
+                
+                loaded = True
+                prompt = prompt + " (model.npz)"
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
+
+        elif choice_model == 2:
+            n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
+            exchange = connect_to_exchange()
+            ohlcv = fetch_data('ETH/USDT', '1h', exchange, n)
+
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
+
+            # Load data (use your own dataset or fetch it via an API)
+            # Example: Load a CSV file with OHLCV data
+            df = pd.DataFrame(ohlcv)
+
+            # Feature engineering: Create additional features (e.g., moving averages, RSI)
+            df['SMA_20'] = df[4].rolling(window=20).mean()
+            df['SMA_50'] = df[4].rolling(window=50).mean()
+            #df['RSI'] = 100 - (100 / (1 + df[4].pct_change().rolling(window=14).apply(lambda x: (x[x > 0].sum() / -x[x < 0].sum()) if x[x < 0].sum() != 0 else 0)))
+
+            df['RSI'] = ta.rsi(df[4], length=14)
+            df['CMO'] = ta.cmo(df[4], length=14)
+            df['ROC'] = ta.roc(df[4], length=14)
+            df["CCI"] = ta.cci(df[2], df[3], df[4], length=14)
+            df['ATR'] = ta.atr(df[2], df[3], df[4])
+            supertrend = ta.supertrend(df[2], df[3], df[4], length=10, multiplier=3)
+            df['SuperTrend'] = supertrend[f'SUPERT_10_3.0']  # SuperTrend column name format is SUPERT_length_multiplier
+            df['SuperTrend_Direction'] = supertrend[f'SUPERTd_10_3.0']  # Trend direction: 1 (bullish), -1 (bearish)
+
+            bollinger = ta.bbands(df[4], length=20, std=2)  # Default length is 20, std is 2
+            df['BB_Middle'] = bollinger['BBM_20_2.0']  # Bollinger Middle Band
+            df['BB_Upper'] = bollinger['BBU_20_2.0']   # Bollinger Upper Band
+            df['BB_Lower'] = bollinger['BBL_20_2.0']   # Bollinger Lower Band
+
+            df['smoothed_close_small'] = df[4].rolling(window=250).mean()
+            #df['smoothed_close_large'] = df[4].rolling(window=60).mean()
+
+            # Drop NaN values after feature calculation
+            df = df.dropna()
+
+            #df['min_small'] = df[4][(df['smoothed_close_small'].shift(100) > df['smoothed_close_small']) & (df['smoothed_close_small'].shift(-100) > df['smoothed_close_small'])]
+            #df['max_small'] = df[4][(df['smoothed_close_small'].shift(100) < df['smoothed_close_small']) & (df['smoothed_close_small'].shift(-100) < df['smoothed_close_small'])]
+            #df['min_large'] = df[4][(df['smoothed_close_large'].shift(15) > df['smoothed_close_large']) & (df['smoothed_close_large'].shift(-15) > df['smoothed_close_large'])]
+            #df['max_large'] = df[4][(df['smoothed_close_large'].shift(15) < df['smoothed_close_large']) & (df['smoothed_close_large'].shift(-15) < df['smoothed_close_large'])]
+
+            df['max'] = df[4].iloc[argrelextrema(df[4].values, np.greater_equal, order=5)[0]]
+            df['min'] = df[4].iloc[argrelextrema(df[4].values, np.less_equal, order=5)[0]]
+
+            df['target'] = 2  # Default is no action
+            df.loc[df['min'].notna(), 'target'] = 1  # Buy at lows
+            df.loc[df['max'].notna(), 'target'] = 0  # Sell at highs
+
+            period = 5
+            df['returns'] = df[4].pct_change(periods=-period)
+            df['lagged'] = df[4].shift(period)
+            #df['lagged_forward'] = df[4].shift(-period)
+
+            '''
+            cutoff = 0.02
+            df['target'] = df.apply(
+                lambda row: 1 if row['returns'] > cutoff else
+                            0 if row['returns'] < cutoff else
+                            2,
+                axis=1
+            )
+            '''
+
+            # Drop rows without target
+            #df = df.dropna()
+
+            # Select features for the model
+            features = [1, 2, 3, 4, 5, 'returns', 'lagged', 'RSI', 'ATR', 'SMA_20', 'SMA_50', 'BB_Upper', 'BB_Lower']
+            X = df[features].values
+            y = df['target'].values
+
+            # Split the dataset
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.02, random_state=42)
+
+            model = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5)
+            model.fit(X_train, y_train)
+
+            predictions = model.predict(X_test)
+            print(y_test)
+            print(predictions)
+
+            accuracy = accuracy_score(y_test, predictions)
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
+
+            joblib.dump(model, 'xgboost_model.pkl')
+
+            loaded = True
+            prompt = prompt + " (model.npz)"
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
+
+        elif choice_model == 3:
+            print("asdf")
+
+        elif choice_model == 4:
+            continue
 
     elif choice == 2:
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► loading model")
@@ -223,7 +256,6 @@ while choice != 4:
 
     elif choice == 3:
         if loaded == True:
-            print("asdfasdf")
             initial_balance = 100  # Starting capital in USD
             balance = initial_balance
             position = 0  # 1 = long, -1 = short, 0 = no position
@@ -236,7 +268,7 @@ while choice != 4:
 
             # Backtest loop
             for i in range(len(predictions)):
-                current_price = df.iloc[len(X_train) + i][4]  # Current price of the asset
+                current_price = df[4].iloc[len(X_train) + i]  # Current price of the asset
                 signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
                 if signal == 1:  # Buy signal
@@ -244,21 +276,22 @@ while choice != 4:
                         position = 1
                         entry_price = current_price
                         balance -= balance * trading_fee  # Deduct trading fee for entering the position
-                        #print(f"[RESULT] Buy: Entering at {entry_price:.2f}, Balance: {balance:.2f}")
+                        print(f"[RESULT] Buy: Entering at {entry_price:.2f}, Balance: {balance:.2f}")
                         #print(f"[RESULT] Buy")
                         plt.scatter(actual_times[i], actual_prices[i], color='green', s=100, label='Buy Signal')
 
-                elif signal == -1:  # Sell signal
+                elif signal == 0:  # Sell signal
                     if position == 1:  # Close the long position if it's open
                         balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
                         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
                         position = 0
-                        #print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}")
+                        print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}")
                         console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
                         #print(f"[st] Trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
                         plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
 
-                elif signal == 0:  # Hold signal
+                elif signal == 2:  # Hold signal
+                    '''
                     if (position == 1 and (current_price - entry_price) / entry_price < -0.025):
                         balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
                         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
@@ -278,6 +311,7 @@ while choice != 4:
                         console.print(f"[purple][bold]st[/bold] [white]► top 5%")
                         #print(f"[ST] Liquidation -1.00%")
                         plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
+                    '''
 
                     continue  # Do nothing and move to the next step
 
@@ -290,7 +324,7 @@ while choice != 4:
             #print(f"[RESULT] Initial Balance: ${initial_balance:.2f}")
             #print(f"[RESULT] Final Balance: ${balance:.2f}")
             #print(f"[RESULT] Net Profit: ${balance - initial_balance:.2f} {((balance - initial_balance) / initial_balance) * 100: .2f}%")
-            console.print(f"[purple][bold]st[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             #print(f"[st] Net Profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             #print(f"[RESULT] $100.00 --> ${((1 + ((balance - initial_balance) / initial_balance)) * 100):.2f}")
 
@@ -303,16 +337,15 @@ while choice != 4:
             '''
 
             plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))][4], color='black', label='Data Points')
+            #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
+            #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_large'], color='red', label='Data Points')
+            plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['max'], color='orange', marker='^', label='Sell Signal')
+            plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min'], color='purple', marker='^', label='Sell Signal')
+            #plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min_large'], color='purple', marker='^', label='Sell Signal')
+            #plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min_small'], color='green', marker='^', label='Sell Signal')
             plt.show()
 
-    
-    if (1 <= int(choice) <= 4):
-        console.input("[dim]\npress any key to continue... ")
-
-    #console.print("[purple][bold]"+ prompt +"[/bold] [white]select option:\n  1) new\n  2) load\n  3) back-test\n  4) quit")
-    try:
-        choice = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
-    except:
-        choice = 0
+    elif choice == 4:
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► select option:\n  1) new    2) load    3) back-test    4) options    5) quit")
 
 quit()
