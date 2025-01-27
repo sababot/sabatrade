@@ -146,7 +146,7 @@ while choice != 5:
         elif choice_model == 2:
             n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
             exchange = connect_to_exchange()
-            ohlcv = fetch_data('ETH/USDT', '1h', exchange, n)
+            ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
 
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
 
@@ -176,22 +176,23 @@ while choice != 5:
             df['smoothed_close_small'] = df[4].rolling(window=250).mean()
             #df['smoothed_close_large'] = df[4].rolling(window=60).mean()
 
-            # Drop NaN values after feature calculation
-            df = df.dropna()
-
             #df['min_small'] = df[4][(df['smoothed_close_small'].shift(100) > df['smoothed_close_small']) & (df['smoothed_close_small'].shift(-100) > df['smoothed_close_small'])]
             #df['max_small'] = df[4][(df['smoothed_close_small'].shift(100) < df['smoothed_close_small']) & (df['smoothed_close_small'].shift(-100) < df['smoothed_close_small'])]
             #df['min_large'] = df[4][(df['smoothed_close_large'].shift(15) > df['smoothed_close_large']) & (df['smoothed_close_large'].shift(-15) > df['smoothed_close_large'])]
             #df['max_large'] = df[4][(df['smoothed_close_large'].shift(15) < df['smoothed_close_large']) & (df['smoothed_close_large'].shift(-15) < df['smoothed_close_large'])]
 
-            df['max'] = df[4].iloc[argrelextrema(df[4].values, np.greater_equal, order=5)[0]]
-            df['min'] = df[4].iloc[argrelextrema(df[4].values, np.less_equal, order=5)[0]]
+            df['max'] = df[4].iloc[argrelextrema(df['smoothed_close_small'].values, np.greater_equal, order=5)[0]]
+            df['min'] = df[4].iloc[argrelextrema(df['smoothed_close_small'].values, np.less_equal, order=5)[0]]
 
-            df['target'] = 2  # Default is no action
+            df['target'] = np.nan  # Default is no action
             df.loc[df['min'].notna(), 'target'] = 1  # Buy at lows
             df.loc[df['max'].notna(), 'target'] = 0  # Sell at highs
 
-            period = 5
+            df['target'] = df['target'].fillna(method='ffill').fillna(method='bfill')
+
+            print(df['target'])
+
+            period = 1
             df['returns'] = df[4].pct_change(periods=-period)
             df['lagged'] = df[4].shift(period)
             #df['lagged_forward'] = df[4].shift(-period)
@@ -210,14 +211,14 @@ while choice != 5:
             #df = df.dropna()
 
             # Select features for the model
-            features = [1, 2, 3, 4, 5, 'returns', 'lagged', 'RSI', 'ATR', 'SMA_20', 'SMA_50', 'BB_Upper', 'BB_Lower']
+            features = [1, 2, 3, 4, 5, 'returns', 'lagged', 'RSI', 'ATR', 'SuperTrend_Direction', 'BB_Upper', 'BB_Lower']
             X = df[features].values
             y = df['target'].values
 
             # Split the dataset
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.02, random_state=42)
 
-            model = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5)
+            model = XGBClassifier(n_estimators=500, learning_rate=0.01, max_depth=8)
             model.fit(X_train, y_train)
 
             predictions = model.predict(X_test)
@@ -337,7 +338,7 @@ while choice != 5:
             '''
 
             plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))][4], color='black', label='Data Points')
-            #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
+            plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
             #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_large'], color='red', label='Data Points')
             plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['max'], color='orange', marker='^', label='Sell Signal')
             plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min'], color='purple', marker='^', label='Sell Signal')
