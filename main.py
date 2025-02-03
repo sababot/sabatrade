@@ -62,16 +62,31 @@ while choice != 5:
             choice_model = 4
 
         if choice_model == 1:
-                n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-                exchange = connect_to_exchange()
-                ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► import data options:\n  1) load    2) fetch    3) quit")
+                try:
+                    data_todo = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
+                except:
+                    data_todo = 3
+
+                if data_todo == 1:
+                    df = pd.read_csv('data/100,000_15.csv')
+                    console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
+                elif data_todo == 2:
+                    n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
+                    exchange = connect_to_exchange()
+                    ohlcv = fetch_data('ETH/USDT', '15m', exchange, n)
+                    df = pd.DataFrame(ohlcv)
+                    console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
+                elif data_todo == 3:
+                    continue
 
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► using model settings 'model.conf'")
 
                 # Load data (use your own dataset or fetch it via an API)
                 # Example: Load a CSV file with OHLCV data
                 df = pd.DataFrame(ohlcv)
-                df.to_csv('100,000_5.csv', index=False)
+                df.to_csv('data/100,000_15.csv', index=False)
 
                 print(df.head())
 
@@ -141,18 +156,26 @@ while choice != 5:
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
 
         elif choice_model == 2:
-            #n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-            exchange = connect_to_exchange()
-            #ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► import data options:\n  1) load    2) fetch    3) quit")
+            try:
+                data_todo = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
+            except:
+                data_todo = 3
+
+            if data_todo == 1:
+                df = pd.read_csv('data/100,000_15.csv')
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
+            elif data_todo == 2:
+                n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
+                exchange = connect_to_exchange()
+                ohlcv = fetch_data('ETH/USDT', '15m', exchange, n)
+                df = pd.DataFrame(ohlcv)
+                console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
+            elif data_todo == 3:
+                continue
 
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
-
-            # Load data (use your own dataset or fetch it via an API)
-            # Example: Load a CSV file with OHLCV data
-            #df = pd.DataFrame(ohlcv)
-
-            df = pd.read_csv('data/100,000_5.csv')
-            #print(df)
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► using model settings 'model.conf'")
 
             # Feature engineering: Create additional features (e.g., moving averages, RSI)
             df['SMA_20'] = df['4'].rolling(window=20).mean()
@@ -173,16 +196,11 @@ while choice != 5:
             df['BB_Upper'] = bollinger['BBU_20_2.0']   # Bollinger Upper Band
             df['BB_Lower'] = bollinger['BBL_20_2.0']   # Bollinger Lower Band
 
-            df['smoothed_close_small'] = df['4'].rolling(window=100).mean()
+            df['smoothed_close_small'] = df['4'].rolling(window=25).mean()
             #df['smoothed_close_large'] = df[4].rolling(window=60).mean()
             df['KAMA'] = ta.kama(df['4'], length=10, fast=10, slow=50)
-            df['EMA'] = ta.ema(df['4'], length=250, adjust=True)
+            df['EMA'] = ta.sma(df['4'], length=25, adjust=True)
 
-
-            #df['min_small'] = df[4][(df['smoothed_close_small'].shift(100) > df['smoothed_close_small']) & (df['smoothed_close_small'].shift(-100) > df['smoothed_close_small'])]
-            #df['max_small'] = df[4][(df['smoothed_close_small'].shift(100) < df['smoothed_close_small']) & (df['smoothed_close_small'].shift(-100) < df['smoothed_close_small'])]
-            #df['min_large'] = df[4][(df['smoothed_close_large'].shift(15) > df['smoothed_close_large']) & (df['smoothed_close_large'].shift(-15) > df['smoothed_close_large'])]
-            #df['max_large'] = df[4][(df['smoothed_close_large'].shift(15) < df['smoothed_close_large']) & (df['smoothed_close_large'].shift(-15) < df['smoothed_close_large'])]
 
             df['max'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.greater_equal, order=10)[0]]
             df['min'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.less_equal, order=10)[0]]
@@ -206,7 +224,7 @@ while choice != 5:
             period_2 = 5
             df['returns'] = df['4'].pct_change(periods=-period)
             df['lagged'] = df['4'].shift(period)
-            df['lagged_2'] = df['4'].shift(period2)
+            df['lagged_2'] = df['4'].shift(period_2)
             df['returns_lagged'] = df['4'].pct_change(periods=period)
             #df['lagged_forward'] = df[4].shift(-period)
 
@@ -257,14 +275,14 @@ while choice != 5:
             y = df['target'].values
 
             # Split the dataset
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.05, shuffle=False)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
             #X_train, y_train = make_classification(n_samples=99900, n_classes=3, weights=[0.1, 0.1, 0.8], n_informative=10, n_features=13)
 
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)  # Transform test set without fitting again
 
-            model = XGBClassifier(n_estimators=2500, learning_rate=0.005, max_depth=10)
+            model = XGBClassifier(n_estimators=250, learning_rate=0.01, max_depth=4)
             model.fit(X_train, y_train)
 
             # obtain the predictions
@@ -277,7 +295,7 @@ while choice != 5:
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
 
             # save model
-            joblib.dump(model, 'xgboost_model.pkl')
+            joblib.dump(model, 'models/xgboost_model.pkl')
 
             # load model
             loaded = True
@@ -310,44 +328,48 @@ while choice != 5:
             initial_balance = 100  # Starting capital in USD
             balance = initial_balance
             position = 0  # 1 = long, -1 = short, 0 = no position
-            entry_price = 0  # Price at which the position is entered
-            trading_fee = 0 #0.001  # 0.075% trading fee per transaction
-            good_trades = 0
+            entry_price = 0 # Price at which the position is entered
+            trading_fee = 0 # 0.075% trading fee per transaction
+            good_trades = []
+            bad_trades = []
             total_trades = 0
 
-            plt.figure(figsize=(14, 7))
+            #plt.figure(figsize=(14, 7))
+            fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(14, 7))
             actual_times = df['0'].iloc[len(X_train):len(X_train) + len(y_test)].values
             actual_prices = df['4'].iloc[len(X_train):len(X_train) + len(y_test)].values
+            alt_indicator = df['SuperTrend_Direction'].iloc[len(X_train):len(X_train) + len(y_test)].values
 
             # Backtest loop
             for i in range(len(predictions)):
                 current_price = df['4'].iloc[len(X_train) + i]  # Current price of the asset
                 signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
-                if signal == 1:  # Buy signal
-                    if position == 0:  # Open a long position if no position is open
-                        position = 1
-                        entry_price = current_price
-                        balance -= balance * trading_fee  # Deduct trading fee for entering the position
-                        print(f"[RESULT] Buy: Entering at {entry_price:.2f}, Balance: {balance:.2f}")
-                        #print(f"[RESULT] Buy")
-                        plt.scatter(actual_times[i], actual_prices[i], color='green', s=100, label='Buy Signal')
+                if signal == 1 and position == 0 and int(alt_indicator[i]) == 1:  # Buy signal
+                    position = 1
+                    entry_price = current_price
+                    balance -= balance * trading_fee  # Deduct trading fee for entering the position
+                    #print(f"[RESULT] Buy: Entering at {entry_price:.2f}, Balance: {balance:.2f}")
+                    #print(f"[RESULT] Buy")
+                    axs[0].scatter(actual_times[i], actual_prices[i], color='green', s=100, label='Buy Signal')
 
-                elif signal == 0:  # Sell signal
-                    if position == 1:  # Close the long position if it's open
-                        balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
-                        balance -= balance * trading_fee  # Deduct trading fee for exiting the position
-                        position = 0
-                        print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}")
+                elif signal == 0 and position == 1 and int(alt_indicator[i]) == -1:  # Sell signal
+                    balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
+                    balance -= balance * trading_fee  # Deduct trading fee for exiting the position
+                    position = 0
+                    #console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                    #print(f"[st] Trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+
+                    if (current_price - entry_price) > 0:
+                        good_trades.append((current_price - entry_price) / entry_price)
                         console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
-                        #print(f"[st] Trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
-
-                        if ((current_price - entry_price) / entry_price)  > 0:
-                            good_trades += 1
-
+                        total_trades += 1
+                    elif (current_price - entry_price) <= 0:
+                        bad_trades.append((current_price - entry_price) / entry_price)
+                        console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
                         total_trades += 1
 
-                        plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
+                    axs[0].scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
 
                 elif signal == 2:  # Hold signal
                     '''
@@ -384,7 +406,10 @@ while choice != 5:
             #print(f"[RESULT] Final Balance: ${balance:.2f}")
             #print(f"[RESULT] Net Profit: ${balance - initial_balance:.2f} {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
-            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(good_trades / total_trades) * 100: .2f}%")
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► total trades: {total_trades}")
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average good trades: {np.mean(good_trades) * 100: .2f}%")
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average bad trades: {np.mean(bad_trades) * 100: .2f}%")
             #print(f"[st] Net Profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             #print(f"[RESULT] $100.00 --> ${((1 + ((balance - initial_balance) / initial_balance)) * 100):.2f}")
 
@@ -396,14 +421,16 @@ while choice != 5:
                     plt.scatter(actual_times[i], actual_prices[i], color='red', label='Sell Signal' if i == 0 else "")
             '''
 
-            plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['4'], color='black', label='Data Points')
-            plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
-            plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['EMA'], color='orange', label='Data Points')
+            axs[0].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['4'], color='black', label='Data Points')
+            #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
+            axs[0].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['EMA'], color='orange', label='Data Points')
             #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_large'], color='red', label='Data Points')
-            plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['max'], color='orange', marker='^', label='Sell Signal')
-            plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min'], color='purple', marker='^', label='Sell Signal')
+            axs[0].scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['max'], color='orange', marker='^', label='Sell Signal')
+            axs[0].scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min'], color='purple', marker='^', label='Sell Signal')
             #plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min_large'], color='purple', marker='^', label='Sell Signal')
             #plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min_small'], color='green', marker='^', label='Sell Signal')
+            axs[1].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['SuperTrend_Direction'], color='purple', label='Data Points')
+            plt.tight_layout()
             plt.show()
 
     elif choice == 4:

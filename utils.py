@@ -26,7 +26,7 @@ def connect_to_exchange():
 
 def fetch_data(symbol, timeframe, exchange, n):
     limit = 1000
-    since = exchange.fetch_ohlcv(symbol, timeframe, limit=1)[0][0] - (5 * 60 * 1000 * limit * (n))
+    since = exchange.fetch_ohlcv(symbol, timeframe, limit=1)[0][0] - (15 * 60 * 1000 * limit * (n))
 
     ohlcv = []
 
