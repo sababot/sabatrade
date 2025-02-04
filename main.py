@@ -76,19 +76,13 @@ while choice != 5:
                     exchange = connect_to_exchange()
                     ohlcv = fetch_data('ETH/USDT', '15m', exchange, n)
                     df = pd.DataFrame(ohlcv)
+                    df.to_csv(f'data/{n * 1000}_15.csv', index=False)
                     console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
                 elif data_todo == 3:
                     continue
 
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► creating model")
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► using model settings 'model.conf'")
-
-                # Load data (use your own dataset or fetch it via an API)
-                # Example: Load a CSV file with OHLCV data
-                df = pd.DataFrame(ohlcv)
-                df.to_csv('data/100,000_15.csv', index=False)
-
-                print(df.head())
 
                 # Feature engineering: Create additional features (e.g., moving averages, RSI)
                 df['SMA_20'] = df['4'].rolling(window=20).mean()
@@ -163,13 +157,14 @@ while choice != 5:
                 data_todo = 3
 
             if data_todo == 1:
-                df = pd.read_csv('data/100,000_15.csv')
+                df = pd.read_csv('data/1,000,000_15.csv')
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
             elif data_todo == 2:
                 n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
                 exchange = connect_to_exchange()
                 ohlcv = fetch_data('ETH/USDT', '15m', exchange, n)
                 df = pd.DataFrame(ohlcv)
+                df.to_csv(f'data/{n * 1000}_15.csv', index=False)
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
             elif data_todo == 3:
                 continue
@@ -275,14 +270,13 @@ while choice != 5:
             y = df['target'].values
 
             # Split the dataset
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-            #X_train, y_train = make_classification(n_samples=99900, n_classes=3, weights=[0.1, 0.1, 0.8], n_informative=10, n_features=13)
-
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.05, shuffle=False)
+            
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)  # Transform test set without fitting again
 
-            model = XGBClassifier(n_estimators=250, learning_rate=0.01, max_depth=4)
+            model = XGBClassifier(n_estimators=250, learning_rate=0.01, max_depth=6)
             model.fit(X_train, y_train)
 
             # obtain the predictions
@@ -329,7 +323,7 @@ while choice != 5:
             balance = initial_balance
             position = 0  # 1 = long, -1 = short, 0 = no position
             entry_price = 0 # Price at which the position is entered
-            trading_fee = 0 # 0.075% trading fee per transaction
+            trading_fee = 0.001 # 0.075% trading fee per transaction
             good_trades = []
             bad_trades = []
             total_trades = 0
@@ -338,27 +332,34 @@ while choice != 5:
             fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(14, 7))
             actual_times = df['0'].iloc[len(X_train):len(X_train) + len(y_test)].values
             actual_prices = df['4'].iloc[len(X_train):len(X_train) + len(y_test)].values
-            alt_indicator = df['SuperTrend_Direction'].iloc[len(X_train):len(X_train) + len(y_test)].values
+            rsi_indicator = df['RSI'].iloc[len(X_train):len(X_train) + len(y_test)].values
+            st_indicator = df['SuperTrend_Direction'].iloc[len(X_train):len(X_train) + len(y_test)].values
+
+            rsi_up = False
+            rsi_down = False
 
             # Backtest loop
             for i in range(len(predictions)):
                 current_price = df['4'].iloc[len(X_train) + i]  # Current price of the asset
                 signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
-                if signal == 1 and position == 0 and int(alt_indicator[i]) == 1:  # Buy signal
+                if rsi_indicator[i] > 60.00:
+                    rsi_up = True
+                    rsi_down = False
+                elif rsi_indicator[i] < 40.00:
+                    rsi_up = False
+                    rsi_down = True
+
+                if signal == 1 and position == 0 and rsi_down == True and st_indicator[i] == 1:  # Buy signal
                     position = 1
                     entry_price = current_price
                     balance -= balance * trading_fee  # Deduct trading fee for entering the position
-                    #print(f"[RESULT] Buy: Entering at {entry_price:.2f}, Balance: {balance:.2f}")
-                    #print(f"[RESULT] Buy")
                     axs[0].scatter(actual_times[i], actual_prices[i], color='green', s=100, label='Buy Signal')
 
-                elif signal == 0 and position == 1 and int(alt_indicator[i]) == -1:  # Sell signal
+                elif signal == 0 and position == 1 and rsi_up == True and st_indicator[i] == -1:  # Sell signal
                     balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
                     balance -= balance * trading_fee  # Deduct trading fee for exiting the position
                     position = 0
-                    #console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
-                    #print(f"[st] Trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
 
                     if (current_price - entry_price) > 0:
                         good_trades.append((current_price - entry_price) / entry_price)
@@ -371,29 +372,6 @@ while choice != 5:
 
                     axs[0].scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
 
-                elif signal == 2:  # Hold signal
-                    '''
-                    if (position == 1 and (current_price - entry_price) / entry_price < -0.025):
-                        balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
-                        balance -= balance * trading_fee  # Deduct trading fee for exiting the position
-                        position = 0
-                        #print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}, -0.01%")
-                        #print(f"[RESULT] Sell -1%")
-                        console.print(f"[purple][bold]st[/bold] [white]► liquidation -0.5%")
-                        #print(f"[ST] Liquidation -1.00%")
-                        plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
-
-                    if (position == 1 and (current_price - entry_price) / entry_price > 0.05):
-                        balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
-                        balance -= balance * trading_fee  # Deduct trading fee for exiting the position
-                        position = 0
-                        #print(f"Sell: Exiting at {current_price:.2f}, Balance: {balance:.2f}, -0.01%")
-                        #print(f"[RESULT] Sell -1%")
-                        console.print(f"[purple][bold]st[/bold] [white]► top 5%")
-                        #print(f"[ST] Liquidation -1.00%")
-                        plt.scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
-                    '''
-
                     continue  # Do nothing and move to the next step
 
             #if position == 1:
@@ -402,24 +380,12 @@ while choice != 5:
                 #print(f"Final Sell: Closing position at {current_price:.2f}, Balance: {balance:.2f}")
 
             # Backtest summary
-            #print(f"[RESULT] Initial Balance: ${initial_balance:.2f}")
-            #print(f"[RESULT] Final Balance: ${balance:.2f}")
-            #print(f"[RESULT] Net Profit: ${balance - initial_balance:.2f} {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► total trades: {total_trades}")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average good trades: {np.mean(good_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average bad trades: {np.mean(bad_trades) * 100: .2f}%")
-            #print(f"[st] Net Profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
-            #print(f"[RESULT] $100.00 --> ${((1 + ((balance - initial_balance) / initial_balance)) * 100):.2f}")
-
-            '''
-            for i, pred in enumerate(predictions):
-                if pred == 1:  # Buy signal
-                    plt.scatter(actual_times[i], actual_prices[i], color='green', label='Buy Signal' if i == 0 else "")
-                elif pred == -1:  # Sell signal
-                    plt.scatter(actual_times[i], actual_prices[i], color='red', label='Sell Signal' if i == 0 else "")
-            '''
+            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► timeframe: {(len(predictions) * 15) / 60 / 24:.2f} days")
 
             axs[0].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['4'], color='black', label='Data Points')
             #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
