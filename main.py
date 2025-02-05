@@ -270,7 +270,7 @@ while choice != 5:
             y = df['target'].values
 
             # Split the dataset
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.05, shuffle=False)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=False)
             
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
@@ -343,20 +343,20 @@ while choice != 5:
                 current_price = df['4'].iloc[len(X_train) + i]  # Current price of the asset
                 signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
-                if rsi_indicator[i] > 60.00:
+                if rsi_indicator[i] > 80.00:
                     rsi_up = True
                     rsi_down = False
-                elif rsi_indicator[i] < 40.00:
+                elif rsi_indicator[i] < 20.00:
                     rsi_up = False
                     rsi_down = True
 
-                if signal == 1 and position == 0 and rsi_down == True and st_indicator[i] == 1:  # Buy signal
+                if signal == 1 and position == 0 and rsi_down == True:  # Buy signal
                     position = 1
                     entry_price = current_price
                     balance -= balance * trading_fee  # Deduct trading fee for entering the position
                     axs[0].scatter(actual_times[i], actual_prices[i], color='green', s=100, label='Buy Signal')
 
-                elif signal == 0 and position == 1 and rsi_up == True and st_indicator[i] == -1:  # Sell signal
+                elif signal == 0 and position == 1 and rsi_up == True:  # Sell signal
                     balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
                     balance -= balance * trading_fee  # Deduct trading fee for exiting the position
                     position = 0
@@ -372,7 +372,21 @@ while choice != 5:
 
                     axs[0].scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
 
-                    continue  # Do nothing and move to the next step
+                if position == 1 and (current_price - entry_price) / entry_price < -0.1:
+                    balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
+                    balance -= balance * trading_fee  # Deduct trading fee for exiting the position
+                    position = 0
+
+                    if (current_price - entry_price) > 0:
+                        good_trades.append((current_price - entry_price) / entry_price)
+                        console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                        total_trades += 1
+                    elif (current_price - entry_price) <= 0:
+                        bad_trades.append((current_price - entry_price) / entry_price)
+                        console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                        total_trades += 1
+
+                    axs[0].scatter(actual_times[i], actual_prices[i], color='red', s=100, label='Sell Signal')
 
             #if position == 1:
                 #balance += (current_price - entry_price) / entry_price * balance
