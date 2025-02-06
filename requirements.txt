@@ -1,0 +1,9 @@
+rich
+pandas
+pandas_ta
+numpy
+matplot
+ccxt
+xgboost
+joblib
+PyQt5
