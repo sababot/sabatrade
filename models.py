@@ -4,6 +4,7 @@ from rich.console import Console
 import numpy as np
 import pandas as pd
 
+'''
 import tensorflow as tf
 
 class KNN(tf.keras.Model):
@@ -66,3 +67,4 @@ class KNN(tf.keras.Model):
         self.y_train = tf.constant(data['y_train'], dtype=tf.int32)
         self.X_test = tf.constant(data['X_train'], dtype=tf.double)
         self.y_test = tf.constant(data['y_train'], dtype=tf.int32)
+'''
