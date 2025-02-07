@@ -14,7 +14,7 @@ It is a simple cli-application with simple functionality. the config file is req
 ⚪ **Step 4:**  enjoy the rewards (hopefully)
 
 ## 📸 screenshots
-![Screenshot](figures/bull-bear-transition.png)
+![Screenshot](screenshots/2025-02-07_16-04.png)
 
 ## 🛠 installation
 ```bash
