@@ -10,6 +10,11 @@ from scipy.signal import argrelextrema
 import time
 import datetime
 
+import os
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use('Qt5Agg')
+
 console = Console()
 
 def welcome_text():
@@ -116,7 +121,7 @@ def process_data(df, ):
 
     return df, X, y
 
-def load_data():
+def load_data(prompt):
     skip = False
 
     console.print("[purple][bold]"+ prompt +"[/bold] [white]► import data options:\n  1) load    2) fetch    3) quit")
@@ -130,12 +135,109 @@ def load_data():
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 2:
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-        exchange = utils.connect_to_exchange()
-        ohlcv = utils.fetch_data('ETH/USDT', '5m', exchange, n)
+        exchange = connect_to_exchange()
+        ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
         df = pd.DataFrame(ohlcv)
-        df.to_csv(f'data/{n * 1000}_5.csv', index=False)
+        df.to_csv(f'data/tmp_5.csv', index=False)
+        df = pd.read_csv('data/tmp_5.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 3:
+        df = []
         skip = True
 
     return df, skip
+
+def back_test(df, predictions, prompt, start, stop):
+    initial_balance = 100  # Starting capital in USD
+    balance = initial_balance
+    position = 0  # 1 = long, -1 = short, 0 = no position
+    entry_price = 0 # Price at which the position is entered
+    trading_fee = 0.001 # 0.075% trading fee per transaction
+    good_trades = []
+    bad_trades = []
+    total_trades = 0
+
+    plt.figure(figsize=(14, 7))
+    actual_times = df['0'].iloc[start:stop].values
+    actual_prices = df['4'].iloc[start:stop].values
+    rsi_indicator = df['RSI'].iloc[start:stop].values
+    st_indicator = df['SuperTrend_Direction'].iloc[start:stop].values
+
+    rsi_up = False
+    rsi_down = False
+
+    # Backtest loop
+    for i in range(len(predictions)):
+        current_price = df['4'].iloc[start + i]  # Current price of the asset
+        signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
+
+        if rsi_indicator[i] > 80.00:
+            rsi_up = True
+            rsi_down = False
+        elif rsi_indicator[i] < 20.00:
+            rsi_up = False
+            rsi_down = True
+
+        if signal == 1 and position == 0 and rsi_down == True:  # Buy signal
+            position = 1
+            entry_price = current_price
+            balance -= balance * trading_fee  # Deduct trading fee for entering the position
+            plt.scatter(actual_times[i], actual_prices[i], color='green', s=150, label='Buy Signal')
+
+        elif signal == 0 and position == 1 and rsi_up == True:  # Sell signal
+            balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
+            balance -= balance * trading_fee  # Deduct trading fee for exiting the position
+            position = 0
+
+            if (current_price - entry_price) > 0:
+                good_trades.append((current_price - entry_price) / entry_price)
+                console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                total_trades += 1
+            elif (current_price - entry_price) <= 0:
+                bad_trades.append((current_price - entry_price) / entry_price)
+                console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                total_trades += 1
+
+            plt.scatter(actual_times[i], actual_prices[i], color='red', s=150, label='Sell Signal')
+
+        if position == 1 and (current_price - entry_price) / entry_price < -0.05:
+            balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
+            balance -= balance * trading_fee  # Deduct trading fee for exiting the position
+            position = 0
+
+            if (current_price - entry_price) > 0:
+                good_trades.append((current_price - entry_price) / entry_price)
+                console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                total_trades += 1
+            elif (current_price - entry_price) <= 0:
+                bad_trades.append((current_price - entry_price) / entry_price)
+                console.print(f"[purple][bold]st[/bold] [white]► trade {((current_price - entry_price) / entry_price) * 100: .2f}%")
+                total_trades += 1
+
+            plt.scatter(actual_times[i], actual_prices[i], color='red', s=150, label='Sell Signal')
+
+    #if position == 1:
+        #balance += (current_price - entry_price) / entry_price * balance
+        #balance -= current_price * trading_fee  # Deduct trading fee for exiting the position
+        #print(f"Final Sell: Closing position at {current_price:.2f}, Balance: {balance:.2f}")
+
+    # Backtest summary
+    console.print("[purple][bold]"+ prompt +f"[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
+    console.print("[purple][bold]"+ prompt +f"[/bold] [white]► total trades: {total_trades}")
+    if total_trades > 0:
+        console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
+    console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average good trades: {np.mean(good_trades) * 100: .2f}%")
+    console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average bad trades: {np.mean(bad_trades) * 100: .2f}%")
+    console.print("[purple][bold]"+ prompt +f"[/bold] [white]► timeframe: {(len(predictions) * 5) / 60 / 24:.2f} days")
+
+    plt.plot(df.iloc[start:stop]['0'], df.iloc[start:stop]['4'], color='black', label='Data Points')
+    #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
+    #axs[0].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['EMA'], color='orange', label='Data Points')
+    #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_large'], color='red', label='Data Points')
+    plt.scatter(df.iloc[start:stop]['0'], df.iloc[start:stop]['max'], color='orange', marker='^', label='Sell Signal')
+    plt.scatter(df.iloc[start:stop]['0'], df.iloc[start:stop]['min'], color='purple', marker='^', label='Sell Signal')
+    #plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min_large'], color='purple', marker='^', label='Sell Signal')
+    #plt.scatter(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['min_small'], color='green', marker='^', label='Sell Signal')
+    #axs[1].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['SuperTrend_Direction'], color='purple', label='Data Points')
+    plt.tight_layout()
+    plt.show()
