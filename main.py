@@ -1,6 +1,6 @@
 # local files
-#from models import KNN
-from utils import welcome_text, connect_to_exchange, fetch_data
+from src import models
+from src import utils
 
 # libraries
 from rich.progress import Progress
@@ -24,6 +24,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
+
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
@@ -74,8 +75,8 @@ while choice != 5:
                     console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
                 elif data_todo == 2:
                     n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-                    exchange = connect_to_exchange()
-                    ohlcv = fetch_data('ETH/USDT', '15m', exchange, n)
+                    exchange = utils.connect_to_exchange()
+                    ohlcv = utils.fetch_data('ETH/USDT', '15m', exchange, n)
                     df = pd.DataFrame(ohlcv)
                     df.to_csv(f'data/{n * 1000}_15.csv', index=False)
                     console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
@@ -162,8 +163,8 @@ while choice != 5:
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
             elif data_todo == 2:
                 n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-                exchange = connect_to_exchange()
-                ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
+                exchange = utils.connect_to_exchange()
+                ohlcv = utils.fetch_data('ETH/USDT', '5m', exchange, n)
                 df = pd.DataFrame(ohlcv)
                 df.to_csv(f'data/{n * 1000}_5.csv', index=False)
                 console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
@@ -322,8 +323,8 @@ while choice != 5:
         '''
 
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
-        exchange = connect_to_exchange()
-        ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
+        exchange = utils.connect_to_exchange()
+        ohlcv = utils.fetch_data('ETH/USDT', '5m', exchange, n)
         df = pd.DataFrame(ohlcv)
         df.to_csv(f'data/tmp_5.csv', index=False)
 
@@ -483,7 +484,8 @@ while choice != 5:
             # Backtest summary
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► total trades: {total_trades}")
-            console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
+            if total_trades > 0:
+                console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average good trades: {np.mean(good_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average bad trades: {np.mean(bad_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► timeframe: {(len(predictions) * 5) / 60 / 24:.2f} days")
@@ -500,6 +502,7 @@ while choice != 5:
             plt.tight_layout()
             plt.show()
 
+    # TMP LOAD BACK-TEST
     elif choice == 4:
         if loaded == True:
             initial_balance = 100  # Starting capital in USD
@@ -527,7 +530,7 @@ while choice != 5:
                 current_price = df['4'].iloc[i]  # Current price of the asset
                 signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
-                if rsi_indicator[i] > 60.00:
+                if rsi_indicator[i] > 80.00:
                     rsi_up = True
                     rsi_down = False
                 elif rsi_indicator[i] < 20.00:
@@ -580,7 +583,8 @@ while choice != 5:
             # Backtest summary
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► net profit: {((balance - initial_balance) / initial_balance) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► total trades: {total_trades}")
-            #console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
+            if total_trades > 0:
+                console.print("[purple][bold]"+ prompt +f"[/bold] [white]► accuracy: {(len(good_trades) / total_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average good trades: {np.mean(good_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► average bad trades: {np.mean(bad_trades) * 100: .2f}%")
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► timeframe: {(len(predictions) * 5) / 60 / 24:.2f} days")
