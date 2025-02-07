@@ -7,7 +7,7 @@ from rich.progress import Progress
 from rich.console import Console
 
 console = Console()
-#welcome_text()
+utils.welcome_text()
 console.print("[purple][bold]st[/bold] [white]► initializing libraries")
 
 import os
