@@ -115,7 +115,7 @@ def process_data(df, ):
     #df['lagged_forward'] = df[4].shift(-period)
 
     # Select features for the model
-    features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'RSI', 'ATR', 'CMO', 'CCI', 'ROC', 'SuperTrend_Direction', 'EMA', 'BB_Upper', 'BB_Lower', 'target']
+    features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'RSI', 'ATR', 'CMO', 'CCI', 'ROC', 'SuperTrend_Direction', 'EMA', 'BB_Upper', 'BB_Lower']
     X = df[features].values
     y = df['target'].values
 
@@ -137,10 +137,10 @@ def load_data(prompt):
     elif data_todo == 2:
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
         exchange = connect_to_exchange()
-        ohlcv = fetch_data('ETH/USDT', '5m', exchange, n)
+        ohlcv = fetch_data('BTC/USDT', '1h', exchange, n)
         df = pd.DataFrame(ohlcv)
-        df.to_csv(f'data/tmp_5.csv', index=False)
-        df = pd.read_csv('data/tmp_5.csv')
+        df.to_csv(f'data/BTC_1h.csv', index=False)
+        df = pd.read_csv('data/tmp_1.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 3:
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
