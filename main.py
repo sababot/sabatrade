@@ -46,6 +46,7 @@ loaded = False
 choice_model = 0
 X_train, X_test, y_train, y_test = [], [], [], []
 start, stop = 0, 0
+year_month_test = False
 
 # cli-program
 while choice != 5:
@@ -127,7 +128,7 @@ while choice != 5:
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► using model settings 'model.conf'")
 
             # define and train model
-            model = XGBClassifier(n_estimators=250, learning_rate=0.01, max_depth=6)
+            model = XGBClassifier(n_estimators=200, learning_rate=0.01, max_depth=6)
             model.fit(X_train, y_train)
 
             # obtain the predictions
@@ -161,7 +162,9 @@ while choice != 5:
 
     # LOAD SAVED MODEL #
     elif choice == 2:
-        df, skip = utils.load_data(prompt)
+        df, skip, ymt = utils.load_data(prompt)
+
+        year_month_test = ymt
 
         if skip == False:
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► processing data")
@@ -193,7 +196,11 @@ while choice != 5:
     # BACK-TEST #
     elif choice == 3:
         if loaded == True:
-            utils.back_test(df, predictions, prompt, start, stop)
+            if year_month_test == False:
+                utils.back_test(df, predictions, prompt, start, stop)
+            elif year_month_test == True:
+                for i in range(9):
+                    utils.back_test(df, predictions, prompt, i * 9000, (i + 1) * 9000)
 
     # SEPERATE ITERATIONS
     print("\n")

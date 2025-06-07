@@ -85,7 +85,7 @@ def process_data(df, ):
     df['smoothed_close_small'] = df['4'].rolling(window=25).mean()
     #df['smoothed_close_large'] = df[4].rolling(window=60).mean()
     df['KAMA'] = ta.kama(df['4'], length=10, fast=10, slow=50)
-    df['EMA'] = ta.sma(df['4'], length=25, adjust=True)
+    df['EMA'] = ta.sma(df['4'], length=40, adjust=True)
 
 
     df['max'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.greater_equal, order=10)[0]]
@@ -107,7 +107,7 @@ def process_data(df, ):
     #print(df['target'])
 
     period = 1
-    period_2 = 5
+    period_2 = 2
     df['returns'] = df['4'].pct_change(periods=-period)
     df['lagged'] = df['4'].shift(period)
     df['lagged_2'] = df['4'].shift(period_2)
@@ -115,7 +115,7 @@ def process_data(df, ):
     #df['lagged_forward'] = df[4].shift(-period)
 
     # Select features for the model
-    features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'RSI', 'ATR', 'CMO', 'CCI', 'ROC', 'SuperTrend_Direction', 'EMA', 'BB_Upper', 'BB_Lower']
+    features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'RSI', 'ATR', 'CMO', 'CCI', 'ROC', 'SuperTrend_Direction', 'EMA', 'BB_Upper', 'BB_Lower', 'target']
     X = df[features].values
     y = df['target'].values
 
@@ -123,15 +123,16 @@ def process_data(df, ):
 
 def load_data(prompt):
     skip = False
+    ymt = False
 
-    console.print("[purple][bold]"+ prompt +"[/bold] [white]► import data options:\n  1) load    2) fetch    3) quit")
+    console.print("[purple][bold]"+ prompt +"[/bold] [white]► import data options:\n  1) load    2) fetch    3)    1 year - 1 month intervals 4) quit")
     try:
         data_todo = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
     except:
         data_todo = 3
 
     if data_todo == 1:
-        df = pd.read_csv('data/100,000_5.csv')
+        df = pd.read_csv('data/100,000_15.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 2:
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
@@ -142,6 +143,15 @@ def load_data(prompt):
         df = pd.read_csv('data/tmp_5.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 3:
+        n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
+        exchange = connect_to_exchange()
+        ohlcv = fetch_data('ETH/USDT', '5m', exchange, 108)
+        df = pd.DataFrame(ohlcv)
+        df.to_csv(f'data/1-year-5-min.csv', index=False)
+        df = pd.read_csv('data/1-year-5-min.csv')
+        console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
+        ymt = True
+    elif data_todo == 4:
         df = []
         skip = True
 
@@ -171,20 +181,20 @@ def back_test(df, predictions, prompt, start, stop):
         current_price = df['4'].iloc[start + i]  # Current price of the asset
         signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
-        if rsi_indicator[i] > 80.00:
+        if rsi_indicator[i] > 60.00:
             rsi_up = True
             rsi_down = False
-        elif rsi_indicator[i] < 20.00:
+        elif rsi_indicator[i] < 40.00:
             rsi_up = False
             rsi_down = True
 
-        if signal == 1 and position == 0 and rsi_down == True:  # Buy signal
+        if signal == 1 and position == 0 and rsi_down == True and st_indicator[i] == 1:  # Buy signal
             position = 1
             entry_price = current_price
             balance -= balance * trading_fee  # Deduct trading fee for entering the position
             plt.scatter(actual_times[i], actual_prices[i], color='green', s=150, label='Buy Signal')
 
-        elif signal == 0 and position == 1 and rsi_up == True:  # Sell signal
+        elif signal == 0 and position == 1:  # Sell signal
             balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
             balance -= balance * trading_fee  # Deduct trading fee for exiting the position
             position = 0
@@ -232,7 +242,7 @@ def back_test(df, predictions, prompt, start, stop):
 
     plt.plot(df.iloc[start:stop]['0'], df.iloc[start:stop]['4'], color='black', label='Data Points')
     #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_small'], color='blue', label='Data Points')
-    #axs[0].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['EMA'], color='orange', label='Data Points')
+    plt.plot(df.iloc[start:stop]['0'], df.iloc[start:stop]['EMA'], color='orange', label='Data Points')
     #plt.plot(df.iloc[len(X_train):(len(X_train) + len(X_test))][0], df.iloc[len(X_train):(len(X_train) + len(X_test))]['smoothed_close_large'], color='red', label='Data Points')
     plt.scatter(df.iloc[start:stop]['0'], df.iloc[start:stop]['max'], color='orange', marker='^', label='Sell Signal')
     plt.scatter(df.iloc[start:stop]['0'], df.iloc[start:stop]['min'], color='purple', marker='^', label='Sell Signal')
