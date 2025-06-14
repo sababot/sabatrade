@@ -35,7 +35,7 @@ import joblib
 
 #################### DATASET ####################
 console.print("[purple][bold]► [/bold][white] loading dataset")
-df = pd.read_csv('data/BTC_1h.csv')
+df = pd.read_csv('data/tmp_5.csv')
 
 #################### FEATURES ####################
 console.print("[purple][bold]► [/bold][white] processing dataset")
@@ -60,26 +60,26 @@ df['BB_Lower'] = bollinger['BBL_20_2.0']   # Bollinger Lower Band
 df['smoothed_close_small'] = df['4'].rolling(window=25).mean()
 #df['smoothed_close_large'] = df[4].rolling(window=60).mean()
 df['KAMA'] = ta.kama(df['4'], length=10, fast=10, slow=50)
-df['EMA'] = ta.sma(df['4'], length=60, adjust=True)
+df['EMA'] = ta.sma(df['4'], length=15, adjust=True)
 
 df['DIST_MAX'] = 1000000000
 df['DIST_MIN'] = 1000000000
 
-df['max'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.greater_equal, order=10)[0]]
-df['min'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.less_equal, order=10)[0]]
+df['max'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.greater_equal, order=8)[0]]
+df['min'] = df['4'].iloc[argrelextrema(df['EMA'].values, np.less_equal, order=8)[0]]
 
 df['target'] = 2  # Default is no action
 df.loc[df['min'].notna(), 'target'] = 1  # Buy at lows
 df.loc[df['max'].notna(), 'target'] = 0  # Sell at highs
 
 for i in range(6, len(df['DIST_MIN'])):
-    truncated_series_max = df['max'].iloc[:i-5]
+    truncated_series_max = df['max'].iloc[:i-4]
     last_valid_index_max = truncated_series_max.last_valid_index()
 
     if last_valid_index_max is not None:
         df.loc[i, 'DIST_MAX'] = i - last_valid_index_max
 
-    truncated_series_min = df['min'].iloc[:i-5]
+    truncated_series_min = df['min'].iloc[:i-4]
     last_valid_index_min = truncated_series_min.last_valid_index()
 
     if last_valid_index_min is not None:
@@ -97,19 +97,19 @@ for i in range(len(df['target'])):
 #print(df['target'])
 
 period = 1
-period_2 = 2
+period_2 = 5
 df['returns'] = df['4'].pct_change(periods=-period)
 df['lagged'] = df['4'].shift(period)
 df['lagged_2'] = df['4'].shift(period_2)
 df['returns_lagged'] = df['4'].pct_change(periods=period)
 
-features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'RSI', 'ATR', 'SuperTrend_Direction', 'EMA', 'BB_Upper', 'BB_Lower', 'DIST_MIN', 'DIST_MAX']
+features = ['1', '2', '3', '4', '5', 'lagged', 'RSI', 'ATR', 'EMA', 'DIST_MIN', 'DIST_MAX']
 X = df[features].values
 y = df['target'].values
 
 #################### XGBOOST MODEL ####################
 # Split the dataset
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, shuffle=False)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.8, shuffle=False)
 
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
@@ -119,7 +119,7 @@ console.print("[purple][bold]► [/bold][white] creating model")
 console.print("[purple][bold]► [/bold][white] using model settings 'model.conf'")
 
 # define and train model
-model = XGBClassifier(n_estimators=600, learning_rate=0.01, max_depth=8)
+model = XGBClassifier(n_estimators=1000, learning_rate=0.01, max_depth=6)
 model.fit(X_train, y_train)
 
 # obtain the predictions
@@ -145,7 +145,7 @@ initial_balance = 100  # Starting capital in USD
 balance = initial_balance
 position = 0  # 1 = long, -1 = short, 0 = no position
 entry_price = 0 # Price at which the position is entered
-trading_fee = 0.001 # 0.075% trading fee per transaction
+trading_fee = 0.000 # 0.075% trading fee per transaction
 good_trades = []
 bad_trades = []
 total_trades = 0
@@ -179,7 +179,7 @@ for i in range(len(predictions)):
         balance -= balance * trading_fee  # Deduct trading fee for entering the position
         plt.scatter(actual_times[i], actual_prices[i], color='green', s=150, label='Buy Signal')
 
-    elif signal == 0 and position == 1 and (((current_price - entry_price) / entry_price) > 0.01 or ((current_price - entry_price) / entry_price) < -0.01):  # Sell signal
+    elif signal == 0 and position == 1:  # Sell signal
         balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
         position = 0

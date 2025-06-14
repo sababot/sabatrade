@@ -132,14 +132,14 @@ def load_data(prompt):
         data_todo = 3
 
     if data_todo == 1:
-        df = pd.read_csv('data/100,000_15.csv')
+        df = pd.read_csv('data/100,000_1d.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 2:
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
         exchange = connect_to_exchange()
-        ohlcv = fetch_data('BTC/USDT', '1h', exchange, n)
+        ohlcv = fetch_data('BTC/USDT', '1d', exchange, n)
         df = pd.DataFrame(ohlcv)
-        df.to_csv(f'data/BTC_1h.csv', index=False)
+        df.to_csv(f'data/BTC_1d.csv', index=False)
         df = pd.read_csv('data/tmp_1.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 3:
