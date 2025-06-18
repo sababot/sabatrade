@@ -35,7 +35,7 @@ import joblib
 
 #################### DATASET ####################
 console.print("[purple][bold]► [/bold][white] loading dataset")
-df = pd.read_csv('data/tmp_5.csv')
+df = pd.read_csv('data/BTC_1h.csv')
 
 #################### FEATURES ####################
 console.print("[purple][bold]► [/bold][white] processing dataset")
@@ -109,7 +109,7 @@ y = df['target'].values
 
 #################### XGBOOST MODEL ####################
 # Split the dataset
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.8, shuffle=False)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, shuffle=False)
 
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
@@ -145,7 +145,7 @@ initial_balance = 100  # Starting capital in USD
 balance = initial_balance
 position = 0  # 1 = long, -1 = short, 0 = no position
 entry_price = 0 # Price at which the position is entered
-trading_fee = 0.000 # 0.075% trading fee per transaction
+trading_fee = 0.001 # 0.075% trading fee per transaction
 good_trades = []
 bad_trades = []
 total_trades = 0
@@ -179,7 +179,7 @@ for i in range(len(predictions)):
         balance -= balance * trading_fee  # Deduct trading fee for entering the position
         plt.scatter(actual_times[i], actual_prices[i], color='green', s=150, label='Buy Signal')
 
-    elif signal == 0 and position == 1:  # Sell signal
+    elif signal == 0 and position == 1 and (((current_price - entry_price) / entry_price) > 0.01 or ((current_price - entry_price) / entry_price) < -0.01):  # Sell signal
         balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
         position = 0
