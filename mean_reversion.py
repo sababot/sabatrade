@@ -12,6 +12,7 @@ console = Console()
 import os
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 matplotlib.use('Qt5Agg')
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -41,7 +42,7 @@ console.print(f"[purple][bold]BUILDING STRATEGY:[/bold]")
 
 #################### DATASET ####################
 console.print("[purple][bold]► [/bold][white] loading dataset")
-df = pd.read_csv('data/DOGE_1h.csv')
+df = pd.read_csv('data/BTC_1h.csv')
 
 #################### FEATURES ####################
 console.print("[purple][bold]► [/bold][white] processing dataset")
@@ -98,11 +99,11 @@ period = 10
 period_2 = 20
 df['returns'] = df['EMA'].pct_change(periods=-period)
 df['returns_lagged'] = df['EMA'].pct_change(periods=2)
-df['lagged'] = df['EMA'].shift(5)
-df['lagged_2'] = df['EMA'].shift(10)
+df['lagged'] = df['EMA'].shift(1)
+df['lagged_2'] = df['EMA'].shift(5)
 
-df['target'] = np.where((df['returns'] > 0.01), 1,
-                        np.where(df['returns'] < -0.01, 0, 2))
+df['target'] = np.where((df['returns'] > 0.005), 1,
+                        np.where(df['returns'] < -0.005, 0, 2))
 
 features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'returns_lagged', 'zscore', 'RSI', 'ATR', 'EMA', 'BB_Middle', 'BB_Upper', 'BB_Lower']
 X = df[features].values
@@ -145,7 +146,7 @@ long_price = None
 short_price = None
 isLong = False
 isShort = False
-stop = 5.2
+sltp = 1
 
 for i in range(len(signals)):
     if signals[i] == 1:
@@ -164,12 +165,12 @@ for i in range(len(signals)):
             long_trades.append((X_test[i, 3] - long_price) / long_price)
             isLong = False
 
-    elif isLong and abs((X_test[i, 3] - long_price) / long_price) > stop and long_price != None:
+    elif isLong and abs((X_test[i, 3] - long_price) / long_price) > sltp and long_price != None:
         long_trades.append((X_test[i, 3] - long_price) / long_price)
         isLong = False
         isShort = False
 
-    elif isShort and abs(-(X_test[i, 3] - short_price) / short_price) > stop and short_price != None:
+    elif isShort and abs(-(X_test[i, 3] - short_price) / short_price) > sltp and short_price != None:
         short_trades.append(-(X_test[i, 3] - short_price) / short_price)
         isLong = False
         isShort = False
@@ -185,29 +186,32 @@ np_short_trades = np.array(short_trades)
 total_trade_accuracy = percentage_positive = np.sum(np_total_trades > 0) / len(np_total_trades)
 long_trade_accuracy = percentage_positive = np.sum(np_long_trades > 0) / len(np_long_trades)
 short_trade_accuracy = percentage_positive = np.sum(np_short_trades > 0) / len(np_short_trades)
+sharpe_ratio = np.mean(total_trades) / np.std(total_trades) * np.sqrt(200)
+profit_factor = np.sum(np_total_trades[np_total_trades > 0]) / -np.sum(np_total_trades[np_total_trades < 0])
+max_drawdown = np.min((np.cumprod(1 + np_total_trades) - np.maximum.accumulate(np.cumprod(1 + np_total_trades))) / np.maximum.accumulate(np.cumprod(1 + np_total_trades)))
 
 # backtest retults
 console.print(f"\n[purple][bold]BACKTEST RESULTS:[/bold]")
-console.print(f"[purple][bold]► [/bold][white] total trades: {len(total_trades)}")
-console.print(f"[purple][bold]► [/bold][white] long pnl: {long_pnl * 100: .2f}%")
-console.print(f"[purple][bold]► [/bold][white] short pnl: {short_pnl * 100: .2f}%")
-console.print(f"[purple][bold]► [/bold][white] total pnl: {total_pnl * 100: .2f}%")
-console.print(f"[purple][bold]► [/bold][white] total accuracy: {total_trade_accuracy * 100: .2f}%")
-console.print(f"[purple][bold]► [/bold][white] long accuracy: {long_trade_accuracy * 100: .2f}%")
-console.print(f"[purple][bold]► [/bold][white] short accuracy: {short_trade_accuracy * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] total trades:        {len(total_trades): .0f}")
+console.print(f"[purple][bold]► [/bold][white] trade accuracy:      {long_trade_accuracy * 100: .2f}% {short_trade_accuracy * 100: .2f}% {total_trade_accuracy * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] pnl:                 {long_pnl * 100: .2f}% {short_pnl * 100: .2f}% {total_pnl * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] max drawdown:        {max_drawdown * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] profit factor:       {profit_factor: .2f}")
+console.print(f"[purple][bold]► [/bold][white] interval:            {len(signals) / 24: .1f} days")
 
 # plot of trades
+df['date'] = pd.to_datetime(df['0'], unit='ms')
 plt.style.use('dark_background')
 plt.figure(figsize=(14, 6))
-plt.plot(df.iloc[len(X_train):len(X_train) + len(X_test)]['4'], label='BTC Close Price', color='white')
+plt.plot(df.iloc[len(X_train):len(X_train) + len(X_test)]['date'], df.iloc[len(X_train):len(X_train) + len(X_test)]['4'], color='white')
 
 signals = np.array(signals)
 
 buy_indices = np.where(signals == 1)[0]
-plt.scatter(len(X_train) + buy_indices, df.iloc[len(X_train) + buy_indices]['4'], label='Long Position', marker='^', color='green', s=100, zorder=2)
+plt.scatter(df.iloc[len(X_train) + buy_indices]['date'], df.iloc[len(X_train) + buy_indices]['4'], label='Long Position', marker='^', color='green', s=100, zorder=2)
 
 sell_indices = np.where(signals == -1)[0]
-plt.scatter(len(X_train) + sell_indices, df.iloc[len(X_train) + sell_indices]['4'], label='Short Position', marker='v', color='red', s=100, zorder=2)
+plt.scatter(df.iloc[len(X_train) + sell_indices]['date'], df.iloc[len(X_train) + sell_indices]['4'], label='Short Position', marker='v', color='red', s=100, zorder=2)
 
 plt.title('Mean Reversion Strategy (BTC)')
 plt.xlabel('Date')
@@ -215,6 +219,7 @@ plt.ylabel('Price (USDT)')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
+plt.gca().yaxis.set_major_formatter(mticker.StrMethodFormatter('{x:,.0f}'))
 plt.show()
 
 
