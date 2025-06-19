@@ -137,9 +137,9 @@ def load_data(prompt):
     elif data_todo == 2:
         n = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► kilocandles to regress: "))
         exchange = connect_to_exchange()
-        ohlcv = fetch_data('BTC/USDT', '1h', exchange, n)
+        ohlcv = fetch_data('DOGE/USDT', '1h', exchange, n)
         df = pd.DataFrame(ohlcv)
-        df.to_csv(f'data/BTC_1h.csv', index=False)
+        df.to_csv(f'data/DOGE_1h.csv', index=False)
         df = pd.read_csv('data/tmp_1.csv')
         console.print("[purple][bold]"+ prompt +"[/bold] [white]► data loaded")
     elif data_todo == 3:
@@ -156,6 +156,31 @@ def load_data(prompt):
         skip = True
 
     return df, skip
+
+def generate_signals(predictions):
+    position = 0
+    signals = []
+
+    for i in range(len(predictions)):
+        if position == 0 and predictions[i] == 1:
+            signals.append(1)
+            position = 1
+
+        elif position == 1 and predictions[i] == 0:
+            signals.append(-1)
+            position = 0
+        
+        else:
+            signals.append(0)
+
+    return signals
+
+def get_pnl(trades):
+    multipliers = 1 + np.array(trades)
+    initial = 100.0
+    final = initial * np.prod(multipliers)
+    return (final - initial) / initial
+
 
 def back_test(df, predictions, prompt, start, stop):
     initial_balance = 100  # Starting capital in USD

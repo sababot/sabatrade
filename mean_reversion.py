@@ -1,3 +1,6 @@
+# scripts
+from src import utils
+
 # libraries
 from rich.progress import Progress
 from rich.console import Console
@@ -33,9 +36,12 @@ from xgboost import XGBClassifier
 from scipy.signal import argrelextrema
 import joblib
 
+# hello world
+console.print(f"[purple][bold]BUILDING STRATEGY:[/bold]")
+
 #################### DATASET ####################
 console.print("[purple][bold]► [/bold][white] loading dataset")
-df = pd.read_csv('data/BTC_1h.csv')
+df = pd.read_csv('data/DOGE_1h.csv')
 
 #################### FEATURES ####################
 console.print("[purple][bold]► [/bold][white] processing dataset")
@@ -88,15 +94,15 @@ for i in range(6, len(df['DIST_MIN'])):
     if last_valid_index_min is not None:
         df.loc[i, 'DIST_MIN'] = i - last_valid_index_min
 
-period = 5
-period_2 = 10
+period = 10
+period_2 = 20
 df['returns'] = df['EMA'].pct_change(periods=-period)
 df['returns_lagged'] = df['EMA'].pct_change(periods=2)
-df['lagged'] = df['EMA'].shift(1)
-df['lagged_2'] = df['EMA'].shift(5)
+df['lagged'] = df['EMA'].shift(5)
+df['lagged_2'] = df['EMA'].shift(10)
 
-df['target'] = np.where((df['returns'] > 0.005), 1,
-                        np.where(df['returns'] < -0.005, 0, 2))
+df['target'] = np.where((df['returns'] > 0.01), 1,
+                        np.where(df['returns'] < -0.01, 0, 2))
 
 features = ['1', '2', '3', '4', '5', 'lagged', 'lagged_2', 'returns_lagged', 'zscore', 'RSI', 'ATR', 'EMA', 'BB_Middle', 'BB_Upper', 'BB_Lower']
 X = df[features].values
@@ -106,9 +112,9 @@ y = df['target'].values
 # Split the dataset
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, shuffle=False)
 
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)  # Transform test set without fitting again
+#scaler = StandardScaler()
+#X_train = scaler.fit_transform(X_train)
+#X_test = scaler.transform(X_test)  # Transform test set without fitting again
 
 console.print("[purple][bold]► [/bold][white] creating model")
 console.print("[purple][bold]► [/bold][white] using model settings 'model.conf'")
@@ -131,11 +137,92 @@ joblib.dump(model, 'models/xgboost_model.joblib')
 loaded = True
 console.print("[purple][bold]► [/bold][white] model loaded")
 
+#################### BACKTEST ####################
+signals = utils.generate_signals(predictions)
+long_trades = []
+short_trades = []
+long_price = None
+short_price = None
+isLong = False
+isShort = False
+stop = 5.2
+
+for i in range(len(signals)):
+    if signals[i] == 1:
+        long_price = X_test[i, 3]
+        isLong = True
+
+        if isShort:
+            short_trades.append(-(X_test[i, 3] - short_price) / short_price)
+            isShort = False
+
+    elif signals[i] == -1:
+        short_price = X_test[i, 3]
+        isShort = True
+
+        if isLong:
+            long_trades.append((X_test[i, 3] - long_price) / long_price)
+            isLong = False
+
+    elif isLong and abs((X_test[i, 3] - long_price) / long_price) > stop and long_price != None:
+        long_trades.append((X_test[i, 3] - long_price) / long_price)
+        isLong = False
+        isShort = False
+
+    elif isShort and abs(-(X_test[i, 3] - short_price) / short_price) > stop and short_price != None:
+        short_trades.append(-(X_test[i, 3] - short_price) / short_price)
+        isLong = False
+        isShort = False
+
+long_pnl = utils.get_pnl(long_trades)
+short_pnl = utils.get_pnl(short_trades)
+total_pnl = utils.get_pnl(np.concatenate((np.array(long_trades), np.array(short_trades))))
+
+total_trades = np.concatenate((np.array(long_trades), np.array(short_trades)))
+np_total_trades = np.array(total_trades)
+np_long_trades = np.array(long_trades)
+np_short_trades = np.array(short_trades)
+total_trade_accuracy = percentage_positive = np.sum(np_total_trades > 0) / len(np_total_trades)
+long_trade_accuracy = percentage_positive = np.sum(np_long_trades > 0) / len(np_long_trades)
+short_trade_accuracy = percentage_positive = np.sum(np_short_trades > 0) / len(np_short_trades)
+
+# backtest retults
+console.print(f"\n[purple][bold]BACKTEST RESULTS:[/bold]")
+console.print(f"[purple][bold]► [/bold][white] total trades: {len(total_trades)}")
+console.print(f"[purple][bold]► [/bold][white] long pnl: {long_pnl * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] short pnl: {short_pnl * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] total pnl: {total_pnl * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] total accuracy: {total_trade_accuracy * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] long accuracy: {long_trade_accuracy * 100: .2f}%")
+console.print(f"[purple][bold]► [/bold][white] short accuracy: {short_trade_accuracy * 100: .2f}%")
+
+# plot of trades
+plt.style.use('dark_background')
+plt.figure(figsize=(14, 6))
+plt.plot(df.iloc[len(X_train):len(X_train) + len(X_test)]['4'], label='BTC Close Price', color='white')
+
+signals = np.array(signals)
+
+buy_indices = np.where(signals == 1)[0]
+plt.scatter(len(X_train) + buy_indices, df.iloc[len(X_train) + buy_indices]['4'], label='Long Position', marker='^', color='green', s=100, zorder=2)
+
+sell_indices = np.where(signals == -1)[0]
+plt.scatter(len(X_train) + sell_indices, df.iloc[len(X_train) + sell_indices]['4'], label='Short Position', marker='v', color='red', s=100, zorder=2)
+
+plt.title('Mean Reversion Strategy (BTC)')
+plt.xlabel('Date')
+plt.ylabel('Price (USDT)')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+'''
 # back-test variables
 start = len(X_train)
 stop = len(X_train) + len(X_test)
 
-#################### BACKTEST ####################
 initial_balance = 100  # Starting capital in USD
 balance = initial_balance
 position = 0  # 1 = long, -1 = short, 0 = no position
@@ -159,7 +246,7 @@ console.print("[purple][bold]► [/bold][white] trades:")
 # Backtest loop
 for i in range(len(predictions)):
     current_price = df['4'].iloc[start + i]  # Current price of the asset
-    signal = predictions[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
+    signal = signals[i]  # Predicted signal (1 = Buy, -1 = Sell, 0 = Hold)
 
     if rsi_indicator[i] > 60.00:
         rsi_up = True
@@ -168,13 +255,14 @@ for i in range(len(predictions)):
         rsi_up = False
         rsi_down = True
 
-    if signal == 1 and position == 0:  # Buy signal
+    if position == 0 and signal == 1:  # Buy signal
         position = 1
         entry_price = current_price
         balance -= balance * trading_fee  # Deduct trading fee for entering the position
+
         plt.scatter(actual_times[i], actual_prices[i], color='green', s=150, label='Buy Signal')
 
-    elif position == 1 and (signal == 0 or abs((current_price - entry_price) / entry_price) > 0.05): # Sell signal
+    elif position == 1 and (signal == -1 or abs((current_price - entry_price) / entry_price) > 1): # Sell signal
         balance += ((current_price - entry_price) / entry_price) * balance  # Calculate profit/loss
         balance -= balance * trading_fee  # Deduct trading fee for exiting the position
         position = 0
@@ -217,3 +305,4 @@ plt.plot(df.iloc[start:stop]['0'], df.iloc[start:stop]['4'], color='black', labe
 #axs[1].plot(df.iloc[len(X_train):(len(X_train) + len(X_test))]['0'], df.iloc[len(X_train):(len(X_train) + len(X_test))]['SuperTrend_Direction'], color='purple', label='Data Points')
 plt.tight_layout()
 plt.show()
+'''
