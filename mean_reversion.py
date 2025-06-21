@@ -146,7 +146,7 @@ long_price = None
 short_price = None
 isLong = False
 isShort = False
-sltp = 1
+sltp = 0.10
 
 for i in range(len(signals)):
     if signals[i] == 1:
