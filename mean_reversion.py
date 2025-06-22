@@ -42,7 +42,7 @@ console.print(f"[purple][bold]BUILDING STRATEGY:[/bold]")
 
 #################### DATASET ####################
 console.print("[purple][bold]► [/bold][white] loading dataset")
-df = pd.read_csv('data/BTC_1h.csv')
+df = pd.read_csv('data/tmp_1.csv')
 
 #################### FEATURES ####################
 console.print("[purple][bold]► [/bold][white] processing dataset")
@@ -111,7 +111,7 @@ y = df['target'].values
 
 #################### XGBOOST MODEL ####################
 # Split the dataset
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, shuffle=False)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.6, shuffle=False)
 
 #scaler = StandardScaler()
 #X_train = scaler.fit_transform(X_train)
@@ -199,7 +199,8 @@ console.print(f"[purple][bold]► [/bold][white] max drawdown:        {max_drawd
 console.print(f"[purple][bold]► [/bold][white] profit factor:       {profit_factor: .2f}")
 console.print(f"[purple][bold]► [/bold][white] interval:            {len(signals) / 24: .1f} days")
 
-# plot of trades
+#################### PLOT ####################
+# BTC close long and short positions
 df['date'] = pd.to_datetime(df['0'], unit='ms')
 plt.style.use('dark_background')
 plt.figure(figsize=(14, 6))
@@ -213,7 +214,6 @@ plt.scatter(df.iloc[len(X_train) + buy_indices]['date'], df.iloc[len(X_train) + 
 sell_indices = np.where(signals == -1)[0]
 plt.scatter(df.iloc[len(X_train) + sell_indices]['date'], df.iloc[len(X_train) + sell_indices]['4'], label='Short Position', marker='v', color='red', s=100, zorder=2)
 
-plt.title('Mean Reversion Strategy (BTC)')
 plt.xlabel('Date')
 plt.ylabel('Price (USDT)')
 plt.legend()
@@ -221,6 +221,22 @@ plt.grid(True)
 plt.tight_layout()
 plt.gca().yaxis.set_major_formatter(mticker.StrMethodFormatter('{x:,.0f}'))
 plt.show()
+
+# cummulative profits
+cum_returns = np.cumprod(1 + np_total_trades)
+
+df['date'] = pd.to_datetime(df['0'], unit='ms')
+plt.style.use('dark_background')
+plt.figure(figsize=(14, 6))
+plt.plot(cum_returns, color='white')
+
+plt.xlabel('Trades')
+plt.ylabel('Cummulative Profit')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
 
 
 '''
