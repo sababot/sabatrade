@@ -1,4 +1,8 @@
 # scripts
+import sys
+import os
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 from src import utils
 
 # libraries
@@ -42,7 +46,7 @@ console.print(f"[purple][bold]BUILDING STRATEGY:[/bold]")
 
 #################### DATASET ####################
 console.print("[purple][bold]► [/bold][white] loading dataset")
-df = pd.read_csv('data/tmp_1.csv')
+df = pd.read_csv('../../data/tmp_1.csv')
 
 #################### FEATURES ####################
 console.print("[purple][bold]► [/bold][white] processing dataset")
@@ -132,7 +136,7 @@ accuracy = accuracy_score(y_test, predictions)
 console.print(f"[purple][bold]► [/bold][white] model accuracy: {accuracy * 100:.2f}%")
 
 # save model
-joblib.dump(model, 'models/xgboost_model.joblib')
+joblib.dump(model, '../../models/xgboost_model.joblib')
 
 # load model
 loaded = True
