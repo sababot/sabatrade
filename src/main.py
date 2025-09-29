@@ -1,6 +1,6 @@
 # local files
-from src import models
-from src import utils
+import models
+import utils
 
 # libraries
 from rich.progress import Progress
