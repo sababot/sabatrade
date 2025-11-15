@@ -47,10 +47,11 @@ choice_model = 0
 X_train, X_test, y_train, y_test = [], [], [], []
 start, stop = 0, 0
 year_month_test = False
+use_ai_backtest = False
 
 # cli-program
 while choice != 5:
-    console.print("[purple][bold]"+ prompt +"[/bold] [white]► options:\n  1) new    2) load    3) back-test    4) options    5) quit")
+    console.print("[purple][bold]"+ prompt +"[/bold] [white]► options:\n  1) new    2) load    3) back-test    4) portfolio    5) quit")
     try:
         choice = int(console.input("[purple][bold]"+ prompt +"[/bold] [white]► "))
     except:
@@ -102,6 +103,7 @@ while choice != 5:
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
                 
             loaded = True
+            use_ai_backtest = False
             prompt = prompt + " (model.npz)"
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
 
@@ -145,6 +147,7 @@ while choice != 5:
 
             # load model
             loaded = True
+            use_ai_backtest = False
             prompt = prompt + " (xgboost_model.json)"
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
 
@@ -152,9 +155,27 @@ while choice != 5:
             start = len(X_train)
             stop = len(X_train) + len(X_test)
 
-        # TBD
+        # Volume + news rule-based strategy (non-AI, stable baseline)
         elif choice_model == 3:
-            print("asdf")
+            df, skip = utils.load_data(prompt)
+            if skip:
+                print("\n")
+                continue
+
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► processing data")
+            df, X, y = utils.process_data(df)
+
+            # Start far enough into the series to avoid NaNs from indicators
+            start = 100
+            stop = len(df)
+
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► building volume + news rule-based strategy")
+            predictions = utils.generate_volume_news_signals(df, start_index=start)
+
+            loaded = True
+            use_ai_backtest = False
+            prompt = prompt + " (vol_news)"
+            console.print("[purple][bold]"+ prompt +"[/bold] [white]► rule-based strategy ready")
 
         # BACK
         elif choice_model == 4:
@@ -186,6 +207,7 @@ while choice != 5:
             console.print("[purple][bold]"+ prompt +f"[/bold] [white]► model accuracy: {accuracy * 100:.2f}%")
 
             loaded = True
+            use_ai_backtest = False
             prompt = prompt + " (xgboost_model.json)"
             console.print("[purple][bold]"+ prompt +"[/bold] [white]► model loaded")
 
@@ -193,16 +215,28 @@ while choice != 5:
             start = 0
             stop = len(X)
 
-    # BACK-TEST #
+    # BACK-TEST (single asset) #
     elif choice == 3:
         if loaded == True:
             if year_month_test == False:
-                utils.back_test(df, predictions, prompt, start, stop)
+                if use_ai_backtest:
+                    utils.back_test_ai(df, predictions, prompt, start, stop)
+                else:
+                    utils.back_test(df, predictions, prompt, start, stop)
             elif year_month_test == True:
                 for i in range(9):
-                    utils.back_test(df, predictions, prompt, i * 9000, (i + 1) * 9000)
+                    if use_ai_backtest:
+                        utils.back_test_ai(df, predictions, prompt, i * 9000, (i + 1) * 9000)
+                    else:
+                        utils.back_test(df, predictions, prompt, i * 9000, (i + 1) * 9000)
+
+    # PORTFOLIO RUNNER #
+    elif choice == 4:
+        utils.run_simple_portfolio()
 
     # SEPERATE ITERATIONS
     print("\n")
 
+# Close any open matplotlib windows when exiting the CLI loop
+plt.close('all')
 quit()
