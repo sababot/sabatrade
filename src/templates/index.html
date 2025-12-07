@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sabatrade Bot Monitor</title>
+    <!-- Ansi Up for color rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/ansi_up@5.0.1/ansi_up.min.js"></script>
+    <!-- Modern fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f1117;
+            --term-bg: #1a1d24;
+            --text-color: #e6e6e6;
+            --accent-color: #bd93f9; /* Dracula purple-ish */
+            --success-color: #50fa7b;
+            --error-color: #ff5555;
+            --header-bg: rgba(26, 29, 36, 0.8);
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        header {
+            background: var(--header-bg);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            background: linear-gradient(90deg, #bd93f9, #ff79c6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-badge {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            background: rgba(80, 250, 123, 0.1);
+            color: var(--success-color);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid rgba(80, 250, 123, 0.2);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success-color);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(80, 250, 123, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(80, 250, 123, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(80, 250, 123, 0); }
+        }
+        
+        main {
+            flex: 1;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .terminal-window {
+            flex: 1;
+            background-color: var(--term-bg);
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .terminal-header {
+            padding: 0.75rem 1.25rem;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .red { background: #ff5555; }
+        .yellow { background: #f1fa8c; }
+        .green { background: #50fa7b; }
+        .terminal-title {
+            margin-left: 1rem;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.4);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        #terminal-output {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            color: #f8f8f2;
+        }
+        
+        /* Custom Scrollbar */
+        #terminal-output::-webkit-scrollbar {
+            width: 10px;
+        }
+        #terminal-output::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #terminal-output::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+            border: 2px solid var(--term-bg);
+        }
+        #terminal-output::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .controls {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        button {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #fff;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+        }
+        button:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.2);
+        }
+        
+        .connection-status {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Sabatrade Bot</h1>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            Process Active
+        </div>
+    </header>
+    <main>
+        <div class="terminal-window">
+            <div class="terminal-header">
+                <div class="dot red"></div>
+                <div class="dot yellow"></div>
+                <div class="dot green"></div>
+                <span class="terminal-title">user@sabatrade:~/bot/logs</span>
+            </div>
+            <div id="terminal-output"></div>
+        </div>
+        <div class="controls">
+            <div class="connection-status" id="connection-status">Connecting...</div>
+            <button id="autoscroll-btn">Scroll Lock: ON</button>
+        </div>
+    </main>
+
+    <script>
+        const outputDiv = document.getElementById('terminal-output');
+        const statusDiv = document.getElementById('connection-status');
+        const ansi_up = new AnsiUp();
+        
+        let lastLogIndex = 0;
+        let autoscroll = true;
+        let isFetching = false;
+
+        const btn = document.getElementById('autoscroll-btn');
+        btn.addEventListener('click', function() {
+            autoscroll = !autoscroll;
+            btn.textContent = autoscroll ? "Scroll Lock: ON" : "Scroll Lock: OFF";
+            btn.style.opacity = autoscroll ? "1" : "0.5";
+        });
+
+        async function fetchLogs() {
+            if (isFetching) return;
+            isFetching = true;
+            
+            try {
+                // Use a timestamp to prevent caching
+                const response = await fetch('/logs?since=' + lastLogIndex + '&t=' + Date.now());
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    statusDiv.textContent = 'Connected • Updating';
+                    statusDiv.style.color = 'rgba(80, 250, 123, 0.7)';
+                    
+                    if (data.logs && data.logs.length > 0) {
+                        // Check if we need to reset (server restart)
+                        if (data.next_index < lastLogIndex) {
+                            outputDiv.innerHTML = '';
+                            lastLogIndex = 0;
+                        }
+                        
+                        lastLogIndex = data.next_index;
+                        
+                        // Use a fragment for better performance on large updates
+                        const fragment = document.createDocumentFragment();
+                        
+                        data.logs.forEach(line => {
+                            const html = ansi_up.ansi_to_html(line);
+                            const div = document.createElement('div');
+                            // Replace empty lines with a non-breaking space to maintain height
+                            div.innerHTML = html || '&nbsp;';
+                            fragment.appendChild(div);
+                        });
+                        
+                        outputDiv.appendChild(fragment);
+
+                        if (autoscroll) {
+                             outputDiv.scrollTop = outputDiv.scrollHeight;
+                        }
+                    }
+                } else {
+                    statusDiv.textContent = 'Error connecting';
+                    statusDiv.style.color = 'rgba(255, 85, 85, 0.7)';
+                }
+            } catch (error) {
+                console.error("Failed to fetch logs", error);
+                statusDiv.textContent = 'Connection lost';
+                statusDiv.style.color = 'rgba(255, 85, 85, 0.7)';
+                // Reset index on error might be too aggressive, but safer if server restarts
+            } finally {
+                isFetching = false;
+            }
+        }
+
+        // Poll every 500ms
+        setInterval(fetchLogs, 500);
+        fetchLogs();
+    </script>
+</body>
+</html>

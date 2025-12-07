@@ -11,6 +11,7 @@ from xgboost import XGBClassifier
 
 import time
 import datetime
+import logging
 
 import os
 import matplotlib
@@ -18,6 +19,17 @@ import matplotlib.pyplot as plt
 matplotlib.use('Qt5Agg')
 
 console = Console()
+
+# Simple file logger for live trading so we can inspect testnet behaviour later
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+logger = logging.getLogger("live_trading")
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(os.path.join(LOG_DIR, "live_trades.log"))
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
 def welcome_text():
     console.print("[bold][white]┌──────────────────────────[purple]──────────────────────────┐")
@@ -30,12 +42,21 @@ def welcome_text():
     console.print("[bold][purple]└──────────────────────────[white]──────────────────────────┘\n")
 
 def connect_to_exchange():
-    console.print("[purple][bold]st[/bold] [white]► connecting to server")
-    return ccxt.binance({
-        "apiKey": os.environ.get("BINANCE_API_KEY"),
-        "secret": os.environ.get("BINANCE_API_SECRET"),
+    console.print("[purple][bold]st[/bold] [white]► connecting to Coinbase Advanced")
+    exchange = ccxt.coinbaseadvanced({
+        "apiKey": os.environ.get("COINBASE_API_KEY"),
+        "secret": os.environ.get("COINBASE_API_SECRET"),
         "enableRateLimit": True,
     })
+
+    # Coinbase keys are often just 'apiKey' and 'secret', but sometimes require 'password' (passphrase)
+    # for Coinbase Advanced Trade / Pro depending on migration status.
+    # Assuming standard API keys for now.
+    
+    if not exchange.apiKey or not exchange.secret:
+         console.print("[red][bold]st[/bold] [white]► Error: COINBASE_API_KEY and COINBASE_API_SECRET must be set.")
+
+    return exchange
 
 
 def place_order(exchange, symbol, side, amount, price=None):
@@ -57,15 +78,62 @@ def place_order(exchange, symbol, side, amount, price=None):
         raise ValueError(f"Invalid side '{side}', expected 'buy' or 'sell'")
 
     try:
+        # Coinbase Advanced requires a price for market buys to calculate cost (amount * price)
+        if price is None and side == 'buy':
+            price = exchange.fetch_ticker(symbol)['last']
+
+        # Force sell max available if side is sell, to avoid insufficient funds due to fees
+        if side == 'sell':
+            try:
+                base_currency = symbol.split('/')[0]
+                bal = exchange.fetch_balance()
+                available = bal.get(base_currency, {}).get('free', 0.0)
+                if available > 0:
+                    # Ensure precision is correct
+                    amount = float(exchange.amount_to_precision(symbol, available))
+                    console.print(f"[purple][bold]st[/bold] [white]► overriding sell amount to max available: {amount}")
+            except Exception as e:
+                console.print(f"[red]Error fetching balance for sell: {e}[/red]")
+
+        # Try to respect Binance min notional / min amount filters where possible
+        markets = getattr(exchange, "markets", None) or exchange.load_markets()
+        market = markets.get(symbol) if isinstance(markets, dict) else None
+
+        if price is not None and market is not None:
+            limits = market.get("limits", {})
+            cost_limits = limits.get("cost", {}) if isinstance(limits, dict) else {}
+            min_cost = cost_limits.get("min")
+
+            if min_cost is not None:
+                est_cost = float(amount) * float(price)
+                if est_cost < float(min_cost):
+                    # Scale amount up to satisfy min notional; this avoids Filter failure: NOTIONAL
+                    min_amount = float(min_cost) / float(price)
+                    amount = min_amount
+                    console.print(
+                        f"[purple][bold]st[/bold] [white]► adjusting amount for {symbol} to meet min notional: "
+                        f"requested notional {est_cost:.4f} < min {min_cost}, using amount={amount:.8f}"
+                    )
+                    logger.info(
+                        f"{symbol} adjust amount for min notional: old_cost={est_cost:.4f}, "
+                        f"min_cost={min_cost}, new_amount={amount:.8f}"
+                    )
+
         if price is None:
             order = exchange.create_order(symbol, "market", side, amount)
         else:
-            order = exchange.create_order(symbol, "limit", side, amount, price)
+            # Pass price to create_order so ccxt/coinbase can calculate 'cost' for market buys
+            # or place a limit order if 'limit' was intended (but logic here uses 'market' type)
+            order = exchange.create_order(symbol, "market", side, amount, price)
 
-        console.print(f"[purple][bold]st[/bold] [white]► order placed: {symbol} {side} {amount} @ {price or 'market'}")
+        msg = f"order placed: {symbol} {side} {amount} @ {price or 'market'}"
+        console.print(f"[purple][bold]st[/bold] [white]► {msg}")
+        logger.info(msg)
         return order
     except Exception as e:
-        console.print(f"[purple][bold]st[/bold] [white]► order error: {e}")
+        msg = f"order error for {symbol} {side} {amount} @ {price or 'market'}: {e}"
+        console.print(f"[purple][bold]st[/bold] [white]► {msg}")
+        logger.error(msg)
         return None
 
 
@@ -90,7 +158,34 @@ def live_trade_loop(symbol, timeframe, base_amount, window=500, poll_seconds=60)
     exchange = connect_to_exchange()
     position = 0  # 0 = flat, 1 = long
 
+    # Decide which rule set to use, based on the base asset
+    base_symbol = symbol.split("/")[0]
+    use_alt_strategy = base_symbol in ("DOGE", "ADA", "SOL", "LINK")
+
     console.print(f"[purple][bold]st[/bold] [white]► starting live loop for {symbol} ({timeframe}), amount {base_amount}")
+    logger.info(f"starting live loop for {symbol} {timeframe}, amount={base_amount}, window={window}, poll={poll_seconds}")
+
+    # Startup Check: Buy then Sell
+    console.print("[purple][bold]st[/bold] [white]► performing startup check (buy + sell)")
+    try:
+        # Buy
+        console.print(f"[purple][bold]st[/bold] [white]► startup: buying {base_amount} {symbol}")
+        buy_order = place_order(exchange, symbol, "buy", base_amount)
+        if buy_order:
+            console.print("[purple][bold]st[/bold] [white]► startup buy successful, waiting 5s before selling...")
+            time.sleep(5)
+            # Sell
+            console.print(f"[purple][bold]st[/bold] [white]► startup: selling {base_amount} {symbol}")
+            sell_order = place_order(exchange, symbol, "sell", base_amount)
+            if sell_order:
+                console.print("[purple][bold]st[/bold] [white]► startup check complete: buy and sell successful")
+            else:
+                console.print("[red][bold]st[/bold] [white]► startup sell failed!")
+        else:
+            console.print("[red][bold]st[/bold] [white]► startup buy failed!")
+    except Exception as e:
+        console.print(f"[red][bold]st[/bold] [white]► startup check error: {e}")
+
 
     while True:
         try:
@@ -98,32 +193,48 @@ def live_trade_loop(symbol, timeframe, base_amount, window=500, poll_seconds=60)
             ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=window)
             df = pd.DataFrame(ohlcv)
 
+            # Ensure column names match the rest of the pipeline ('0'..'5')
+            df.columns = [str(i) for i in range(df.shape[1])]
+
             # Build indicators and signals
             df, _, _ = process_data(df)
             start = 100
-            preds = generate_volume_news_signals(df, start_index=start)
+
+            # Use altcoin strategy for alts, volume+news for majors
+            if use_alt_strategy:
+                preds = generate_altcoin_signals(df, start_index=start)
+            else:
+                preds = generate_volume_news_signals(df, start_index=start)
+
             if len(preds) == 0:
+                logger.info(f"{symbol} {timeframe} no signals (len(preds)==0), position={position}")
                 time.sleep(poll_seconds)
                 continue
 
             last_signal = preds[-1]
             last_price = df['4'].iloc[-1]
+            logger.info(f"{symbol} {timeframe} tick price={last_price} signal={last_signal} position={position}")
 
             # Decide and place orders
             if position == 0 and last_signal == 1:
                 console.print(f"[purple][bold]st[/bold] [white]► live signal BUY at {last_price}")
-                order = place_order(exchange, symbol, "buy", base_amount)
+                logger.info(f"{symbol} {timeframe} action=BUY price={last_price} amount={base_amount}")
+                # Pass last_price so place_order can enforce min notional
+                order = place_order(exchange, symbol, "buy", base_amount, price=last_price)
                 if order is not None:
                     position = 1
 
             elif position == 1 and last_signal == 0:
                 console.print(f"[purple][bold]st[/bold] [white]► live signal SELL at {last_price}")
-                order = place_order(exchange, symbol, "sell", base_amount)
+                logger.info(f"{symbol} {timeframe} action=SELL price={last_price} amount={base_amount}")
+                # Pass last_price so place_order can enforce min notional
+                order = place_order(exchange, symbol, "sell", base_amount, price=last_price)
                 if order is not None:
                     position = 0
 
         except Exception as e:
             console.print(f"[purple][bold]st[/bold] [white]► live loop error: {e}")
+            logger.error(f"{symbol} {timeframe} live loop error: {e}")
 
         time.sleep(poll_seconds)
 
@@ -319,7 +430,10 @@ def generate_volume_news_signals(df, start_index=100, lookback=60):
             sentiment = df['News_Sentiment_Real'].iloc[i]
         else:
             sentiment = df['News_Sentiment'].iloc[i]
-        ema = df['EMA'].iloc[i] if 'EMA' in df.columns else df['4'].iloc[i]
+        
+        # Use SMA_20 for faster trend reaction (was EMA/SMA_40)
+        trend = df['SMA_20'].iloc[i] if 'SMA_20' in df.columns else (df['EMA'].iloc[i] if 'EMA' in df.columns else df['4'].iloc[i])
+        rsi = df['RSI'].iloc[i] if 'RSI' in df.columns else 50
 
         # Skip until volume MA is defined
         if pd.isna(vol_ma):
@@ -327,10 +441,10 @@ def generate_volume_news_signals(df, start_index=100, lookback=60):
             continue
 
         # Bullish condition: volume spike + positive sentiment + price above trend
-        bullish = (vol > 1.5 * vol_ma) and (sentiment == 1) and (df['4'].iloc[i] > ema)
+        bullish = (vol > 1.5 * vol_ma) and (sentiment == 1) and (df['4'].iloc[i] > trend)
 
-        # Bearish/exit condition: negative sentiment or price back below trend
-        bearish = (sentiment == -1) or (df['4'].iloc[i] < ema)
+        # Bearish/exit condition: negative sentiment OR price drops below trend OR RSI overbought
+        bearish = (sentiment == -1) or (df['4'].iloc[i] < trend) or (rsi > 75)
 
         if bullish:
             predictions.append(1)
@@ -344,15 +458,11 @@ def generate_volume_news_signals(df, start_index=100, lookback=60):
 
 def generate_altcoin_signals(df, start_index=100, lookback=60):
     """
-    Higher-risk volume + momentum strategy tuned for altcoins.
+    Mean Reversion strategy for Altcoins (Buying the dip).
+    Replaces the previous momentum/breakout logic which was buying tops.
 
-    - Volume: current volume > 1.2 * rolling mean volume.
-    - Momentum: strong recent move over last 12 bars.
-        * Bullish if return > +1%.
-        * Bearish if return < -3%.
-    - Trend filter: price relative to EMA.
-        * Buy only if price > EMA.
-        * Exit if price < EMA or strong negative move.
+    - Buy: RSI < 30 (Oversold) OR Price < Lower Bollinger Band (Dip).
+    - Sell: RSI > 70 (Overbought) OR Price > Upper Bollinger Band (Pump).
 
     Returns predictions for indices [start_index, len(df)):
         1 → enter/hold long bias
@@ -362,24 +472,19 @@ def generate_altcoin_signals(df, start_index=100, lookback=60):
     if len(df) < start_index + lookback + 12:
         return []
 
-    df['ALT_VOL_MA'] = df['5'].rolling(window=lookback).mean()
-    df['ALT_RET_12'] = df['4'].pct_change(periods=12)
-
     predictions = []
 
     for i in range(start_index, len(df)):
-        vol = df['5'].iloc[i]
-        vol_ma = df['ALT_VOL_MA'].iloc[i]
-        ret12 = df['ALT_RET_12'].iloc[i]
-        ema = df['EMA'].iloc[i] if 'EMA' in df.columns else df['4'].iloc[i]
+        rsi = df['RSI'].iloc[i] if 'RSI' in df.columns else 50
+        price = df['4'].iloc[i]
+        bb_lower = df['BB_Lower'].iloc[i] if 'BB_Lower' in df.columns else 0
+        bb_upper = df['BB_Upper'].iloc[i] if 'BB_Upper' in df.columns else float('inf')
 
-        if pd.isna(vol_ma) or pd.isna(ret12):
-            predictions.append(2)
-            continue
+        # Mean Reversion Entry: Buy when oversold or below lower band
+        bullish = (rsi < 30) or (price < bb_lower)
 
-        bullish = (vol > 1.2 * vol_ma) and (ret12 > 0.01) and (df['4'].iloc[i] > ema)
-        # Original altcoin exit: exit on sharp negative momentum OR simple break below EMA
-        bearish = (ret12 < -0.03) or (df['4'].iloc[i] < ema)
+        # Mean Reversion Exit: Sell when overbought or above upper band
+        bearish = (rsi > 70) or (price > bb_upper)
 
         if bullish:
             predictions.append(1)
