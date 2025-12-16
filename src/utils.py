@@ -165,26 +165,26 @@ def live_trade_loop(symbol, timeframe, base_amount, window=500, poll_seconds=60)
     console.print(f"[purple][bold]st[/bold] [white]► starting live loop for {symbol} ({timeframe}), amount {base_amount}")
     logger.info(f"starting live loop for {symbol} {timeframe}, amount={base_amount}, window={window}, poll={poll_seconds}")
 
-    # Startup Check: Buy then Sell
-    console.print("[purple][bold]st[/bold] [white]► performing startup check (buy + sell)")
-    try:
-        # Buy
-        console.print(f"[purple][bold]st[/bold] [white]► startup: buying {base_amount} {symbol}")
-        buy_order = place_order(exchange, symbol, "buy", base_amount)
-        if buy_order:
-            console.print("[purple][bold]st[/bold] [white]► startup buy successful, waiting 5s before selling...")
-            time.sleep(5)
-            # Sell
-            console.print(f"[purple][bold]st[/bold] [white]► startup: selling {base_amount} {symbol}")
-            sell_order = place_order(exchange, symbol, "sell", base_amount)
-            if sell_order:
-                console.print("[purple][bold]st[/bold] [white]► startup check complete: buy and sell successful")
-            else:
-                console.print("[red][bold]st[/bold] [white]► startup sell failed!")
-        else:
-            console.print("[red][bold]st[/bold] [white]► startup buy failed!")
-    except Exception as e:
-        console.print(f"[red][bold]st[/bold] [white]► startup check error: {e}")
+    # Startup Check: Buy then Sell - COMMENTED OUT TO SAVE FEES
+    # console.print("[purple][bold]st[/bold] [white]► performing startup check (buy + sell)")
+    # try:
+    #     # Buy
+    #     console.print(f"[purple][bold]st[/bold] [white]► startup: buying {base_amount} {symbol}")
+    #     buy_order = place_order(exchange, symbol, "buy", base_amount)
+    #     if buy_order:
+    #         console.print("[purple][bold]st[/bold] [white]► startup buy successful, waiting 5s before selling...")
+    #         time.sleep(5)
+    #         # Sell
+    #         console.print(f"[purple][bold]st[/bold] [white]► startup: selling {base_amount} {symbol}")
+    #         sell_order = place_order(exchange, symbol, "sell", base_amount)
+    #         if sell_order:
+    #             console.print("[purple][bold]st[/bold] [white]► startup check complete: buy and sell successful")
+    #         else:
+    #             console.print("[red][bold]st[/bold] [white]► startup sell failed!")
+    #     else:
+    #         console.print("[red][bold]st[/bold] [white]► startup buy failed!")
+    # except Exception as e:
+    #     console.print(f"[red][bold]st[/bold] [white]► startup check error: {e}")
 
 
     while True:
@@ -215,22 +215,66 @@ def live_trade_loop(symbol, timeframe, base_amount, window=500, poll_seconds=60)
             last_price = df['4'].iloc[-1]
             logger.info(f"{symbol} {timeframe} tick price={last_price} signal={last_signal} position={position}")
 
-            # Decide and place orders
-            if position == 0 and last_signal == 1:
-                console.print(f"[purple][bold]st[/bold] [white]► live signal BUY at {last_price}")
-                logger.info(f"{symbol} {timeframe} action=BUY price={last_price} amount={base_amount}")
-                # Pass last_price so place_order can enforce min notional
-                order = place_order(exchange, symbol, "buy", base_amount, price=last_price)
-                if order is not None:
-                    position = 1
+            entry_price = 0.0 if 'entry_price' not in locals() else entry_price
 
+            # Decide and place orders
+            
+            # --- Safety & Fee Checks ---
+            
+            # 1. STOP LOSS (Always active if in position)
+            if position == 1 and entry_price > 0:
+                pnl_pct = (last_price - entry_price) / entry_price
+                if pnl_pct < -0.05: # 5% Stop Loss
+                    console.print(f"[red][bold]STOP LOSS[/bold] [white]► PnL: {pnl_pct*100:.2f}% triggered.")
+                    logger.info(f"{symbol} {timeframe} action=STOP_LOSS price={last_price} pnl={pnl_pct:.4f}")
+                    order = place_order(exchange, symbol, "sell", base_amount, price=last_price)
+                    if order is not None:
+                        position = 0
+                        entry_price = 0.0
+                    # Skip normal signal processing if SL hit
+                    continue
+
+            # 2. BUY Logic
+            if position == 0 and last_signal == 1:
+                # Filter: Check spread for Altcoin strategy to ensure room for profit > fees
+                can_buy = True
+                if use_alt_strategy:
+                    bb_upper = df['BB_Upper'].iloc[-1]
+                    bb_lower = df['BB_Lower'].iloc[-1]
+                    if pd.notna(bb_upper) and pd.notna(bb_lower) and last_price > 0:
+                        spread = (bb_upper - bb_lower) / last_price
+                        # We need > 3% to cover ~2.4% fees + slip + profit
+                        if spread < 0.03:
+                            console.print(f"[yellow][bold]st[/bold] [white]► Skipping Buy: BB Spread {spread*100:.2f}% < 3% threshold")
+                            logger.info(f"{symbol} SKIP BUY: Spread too small ({spread:.4f})")
+                            can_buy = False
+
+                if can_buy:
+                    console.print(f"[purple][bold]st[/bold] [white]► live signal BUY at {last_price}")
+                    logger.info(f"{symbol} {timeframe} action=BUY price={last_price} amount={base_amount}")
+                    # Pass last_price so place_order can enforce min notional
+                    order = place_order(exchange, symbol, "buy", base_amount, price=last_price)
+                    if order is not None:
+                        position = 1
+                        entry_price = last_price
+
+            # 3. SELL Logic
             elif position == 1 and last_signal == 0:
-                console.print(f"[purple][bold]st[/bold] [white]► live signal SELL at {last_price}")
-                logger.info(f"{symbol} {timeframe} action=SELL price={last_price} amount={base_amount}")
-                # Pass last_price so place_order can enforce min notional
-                order = place_order(exchange, symbol, "sell", base_amount, price=last_price)
-                if order is not None:
-                    position = 0
+                # Filter: Minimum Profit to cover fees
+                pnl_pct = (last_price - entry_price) / entry_price
+                min_profit = 0.025 # 2.5% to cover 2.4% fees approx
+                
+                if pnl_pct > min_profit:
+                    console.print(f"[purple][bold]st[/bold] [white]► live signal SELL at {last_price} (PnL: {pnl_pct*100:.2f}%)")
+                    logger.info(f"{symbol} {timeframe} action=SELL price={last_price} amount={base_amount}")
+                    # Pass last_price so place_order can enforce min notional
+                    order = place_order(exchange, symbol, "sell", base_amount, price=last_price)
+                    if order is not None:
+                        position = 0
+                        entry_price = 0.0
+                else:
+                    console.print(f"[yellow][bold]st[/bold] [white]► Holding: Signal Sell but PnL {pnl_pct*100:.2f}% < {min_profit*100}%")
+                    logger.info(f"{symbol} IGNORE SELL: PnL {pnl_pct:.4f} too low")
 
         except Exception as e:
             console.print(f"[purple][bold]st[/bold] [white]► live loop error: {e}")
