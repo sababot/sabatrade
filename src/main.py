@@ -68,7 +68,7 @@ while choice != 5:
         # KNN
         if choice_model == 1:
             # load data
-            df, skip = utils.load_data(prompt)
+            df, skip, _ymt = utils.load_data(prompt)
             if skip == True:
                 print("\n")
                 continue
@@ -110,7 +110,7 @@ while choice != 5:
         # XGBOOST
         elif choice_model == 2:
             # load data
-            df, skip = utils.load_data(prompt)
+            df, skip, _ymt = utils.load_data(prompt)
             if skip == True:
                 print("\n")
                 continue
@@ -157,7 +157,7 @@ while choice != 5:
 
         # Volume + news rule-based strategy (non-AI, stable baseline)
         elif choice_model == 3:
-            df, skip = utils.load_data(prompt)
+            df, skip, _ymt = utils.load_data(prompt)
             if skip:
                 print("\n")
                 continue
@@ -215,7 +215,7 @@ while choice != 5:
             start = 0
             stop = len(X)
 
-    # BACK-TEST (single asset) #
+    # BACK-TEST #
     elif choice == 3:
         if loaded == True:
             if year_month_test == False:

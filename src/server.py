@@ -8,9 +8,7 @@ import os
 import sys
 import signal
 
-# Configuration
 PORT = 8000
-# Path to the script we want to run
 SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "real.py")
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -28,15 +26,6 @@ def run_trading_bot():
     
     cmd = [sys.executable, "-u", SCRIPT_PATH]
     
-    # We want to run from the project root so imports like 'import src.utils' or 'import utils' work correctly
-    # existing real.py does 'import utils' which implies it expects to be run where utils is importable.
-    # If we run from project root, and src is not a package, 'import utils' might fail if we don't adjust path.
-    # However, Python puts the script's directory in sys.path[0].
-    # So running /path/to/src/real.py will add /path/to/src/ to sys.path.
-    # Thus 'import utils' (which is in src/) will work.
-    # BUT, the script might rely on files relative to CWD (like 'data/').
-    # So we should probably set CWD to project root.
-    
     project_root = os.path.dirname(os.path.dirname(__file__))
     print(f"Server: Starting bot from {project_root}...")
     
@@ -46,9 +35,9 @@ def run_trading_bot():
             cmd,
             cwd=project_root,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # Merge stderr into stdout
+            stderr=subprocess.STDOUT, 
             text=True,
-            bufsize=1, # Line buffered
+            bufsize=1, 
             env=env
         )
         
